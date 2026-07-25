@@ -1,0 +1,49 @@
+{
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "xelatex (latexmkrc)",
+      "tools": ["latexmk"]
+    },
+    {
+      "name": "xelatex × 1",
+      "tools": ["xelatex"]
+    },
+    {
+      "name": "xelatex → bibtex → xelatex × 2",
+      "tools": ["xelatex", "bibtex", "xelatex", "xelatex"]
+    }
+  ],
+  "latex-workshop.latex.tools": [
+    {
+      "name": "latexmk",
+      "command": "latexmk",
+      "args": [
+        "-pdf",
+        "-outdir=build",
+        "%DOC%"
+      ],
+      "env": {}
+    },
+    {
+      "name": "xelatex",
+      "command": "xelatex",
+      "args": [
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-output-directory=build",
+        "%DOC%"
+      ],
+      "env": {}
+    },
+    {
+      "name": "bibtex",
+      "command": "bibtex",
+      "args": [
+        "build/%DOCFILE%"
+      ],
+      "env": {}
+    }
+  ],
+  "latex-workshop.latex.outDir": "build"
+}

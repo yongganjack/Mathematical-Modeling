@@ -1,0 +1,19 @@
+% 字体设置：原 Word 使用宋体、黑体和仿宋；路径加载确保 PDF 嵌入字体。
+\IfFileExists{C:/Windows/Fonts/simsun.ttc}{
+  \setmainfont{Times New Roman}
+  \setCJKmainfont[Path=C:/Windows/Fonts/]{simsun.ttc}
+  \setCJKsansfont[Path=C:/Windows/Fonts/]{simhei.ttf}
+  \setCJKmonofont[Path=C:/Windows/Fonts/]{simfang.ttf}
+  \newCJKfontfamily\heiti[Path=C:/Windows/Fonts/]{simhei.ttf}
+  \newCJKfontfamily\songti[Path=C:/Windows/Fonts/]{simsun.ttc}
+  \newCJKfontfamily\fangsong[Path=C:/Windows/Fonts/]{simfang.ttf}
+}{
+  % 非 Windows 环境请替换为本机已安装、可嵌入的中文字体。
+  \setmainfont{texgyretermes-regular.otf}
+  \setCJKmainfont{FandolSong-Regular.otf}
+  \setCJKsansfont{FandolHei-Regular.otf}
+  \setCJKmonofont{FandolFang-Regular.otf}
+  \newCJKfontfamily\heiti{FandolHei-Regular.otf}
+  \newCJKfontfamily\songti{FandolSong-Regular.otf}
+  \newCJKfontfamily\fangsong{FandolFang-Regular.otf}
+}
