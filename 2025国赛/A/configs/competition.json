@@ -1,0 +1,42 @@
+{
+  "master_seed": 2025,
+  "numerical": {
+    "interval_merge_tolerance": 1e-09,
+    "root_tolerance": 1e-08
+  },
+  "optimization": {
+    "budgets": {
+      "q2": {
+        "max_evaluations": 20000
+      },
+      "q3": {
+        "max_evaluations": 50000
+      },
+      "q4": {
+        "max_evaluations": 80000
+      },
+      "q5": {
+        "max_evaluations": 200000
+      }
+    },
+    "workers": 1
+  },
+  "output": {
+    "root": "outputs",
+    "save_diagnostics": true
+  },
+  "physics": {
+    "gravity": 9.8
+  },
+  "profile": "competition",
+  "sampling": {
+    "fast": {
+      "target_surface_points": 144,
+      "time_step": 0.02
+    },
+    "verify": {
+      "target_surface_points": 720,
+      "time_step": 0.005
+    }
+  }
+}

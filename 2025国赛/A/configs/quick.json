@@ -1,0 +1,42 @@
+{
+  "master_seed": 2025,
+  "numerical": {
+    "interval_merge_tolerance": 1e-08,
+    "root_tolerance": 1e-06
+  },
+  "optimization": {
+    "budgets": {
+      "q2": {
+        "max_evaluations": 2000
+      },
+      "q3": {
+        "max_evaluations": 4000
+      },
+      "q4": {
+        "max_evaluations": 6000
+      },
+      "q5": {
+        "max_evaluations": 12000
+      }
+    },
+    "workers": 1
+  },
+  "output": {
+    "root": "outputs",
+    "save_diagnostics": true
+  },
+  "physics": {
+    "gravity": 9.8
+  },
+  "profile": "quick",
+  "sampling": {
+    "fast": {
+      "target_surface_points": 72,
+      "time_step": 0.05
+    },
+    "verify": {
+      "target_surface_points": 288,
+      "time_step": 0.01
+    }
+  }
+}
