@@ -609,8 +609,10 @@ question1/
 
 【任务要求】
 
-请使用【Python/MATLAB】编写完整代码。
-不要使用`using-superpowers、superpowers`这个skill
+1.请使用【Python/MATLAB】编写完整代码。
+2.在生成代码的时候，生成一些中文注释和代码运行时的调试信息
+3.注释和自定义异常信息尽量都用中文
+4.不要使用`using-superpowers、superpowers`这个skill
 
 【代码要求】
 

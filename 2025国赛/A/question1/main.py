@@ -1,10 +1,11 @@
-"""End-to-end solver for the fixed strategy required by Question 1."""
+"""问题一的端到端求解器，执行固定的投弹策略。"""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import importlib.metadata
+import logging
 import math
 import platform
 import subprocess
@@ -15,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
@@ -50,7 +53,7 @@ def _resolve_input(path: str | Path) -> Path:
 def _positive_float(text: str) -> float:
     value = float(text)
     if not np.isfinite(value) or value <= 0.0:
-        raise argparse.ArgumentTypeError("must be a finite number greater than 0")
+        raise argparse.ArgumentTypeError("必须为大于 0 的有限数")
     return value
 
 
@@ -64,9 +67,9 @@ def _scale_budgets(config: dict[str, Any], scale: float | None) -> None:
 
 
 def _print_config_summary(config: Mapping[str, Any]) -> None:
-    print(f"profile: {config['profile']}")
-    print(f"master_seed: {config['master_seed']}")
-    print(f"budgets: {config['optimization']['budgets']}")
+    print(f"配置方案: {config['profile']}")
+    print(f"主随机种子: {config['master_seed']}")
+    print(f"优化预算: {config['optimization']['budgets']}")
 
 
 def _plain(value: Any) -> Any:
@@ -227,8 +230,12 @@ def _parser() -> argparse.ArgumentParser:
 def run(args: argparse.Namespace) -> tuple[int, Path]:
     started_at = _utc_now()
     config_path = _resolve_input(args.config)
+    logger.info("加载配置文件: %s", config_path)
+    logger.info("配置 profile: %s", args.config)
     config = load_config(config_path)
     data = load_problem_data(config)
+    logger.info("问题数据已加载: 导弹数量=%d, UAV数量=%d, 目标半径=%.2f",
+                len(data.missile_init), len(data.uav_init), data.target_radius)
     _scale_budgets(config, getattr(args, "budget_scale", None))
     if getattr(args, "validate_config_only", False):
         _print_config_summary(config)
@@ -258,12 +265,16 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
 
         plan = _fixed_strategy()
         derived = derive_bomb(plan, plan.bombs[0], data)
+        logger.info("开始快速评估...")
         fast = evaluate_solution(
             [plan], [0], data, config["sampling"]["fast"], config["numerical"], question_id=1
         )
+        logger.info("快速评估完成: 目标值=%s, 可行=%s", fast.sum_objective, fast.feasible)
+        logger.info("开始验证评估...")
         verify = evaluate_solution(
             [plan], [0], data, config["sampling"]["verify"], config["numerical"], question_id=1
         )
+        logger.info("验证评估完成: 目标值=%s, 可行=%s", verify.sum_objective, verify.feasible)
         convergence_rows = _convergence_rows(fast, verify, config)
         difference = float(convergence_rows[0]["absolute_difference"])
         convergence_tolerance = max(
@@ -331,11 +342,16 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
         )
 
         if not args.no_plots:
+            logger.info("开始生成图表...")
             from question1.visualization import plot_convergence, plot_intervals, plot_trajectory
 
             plot_trajectory(data, plan, derived, run_dir)
+            logger.info("轨迹图已保存到 %s", run_dir)
             plot_intervals(verify.intervals_by_missile, run_dir)
+            logger.info("区间图已保存到 %s", run_dir)
             plot_convergence(convergence_rows, run_dir)
+            logger.info("收敛图已保存到 %s", run_dir)
+            logger.info("图表生成完成")
 
         manifest.update(
             {
@@ -345,15 +361,15 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
         )
         save_json(manifest_path, manifest)
 
-        print(f"strategy: {decision_variables}")
-        print(f"release point: {derived.release_point.tolist()}")
-        print(f"explosion point: {derived.explosion_point.tolist()}")
-        print(f"fast duration: {fast.sum_objective:.15g}")
-        print(f"verify duration: {verify.sum_objective:.15g}")
-        print(f"intervals: {_plain(verify.intervals_by_missile)}")
-        print(f"max residual: {_max_residual(verify):.15g}")
-        print(f"status: {status}")
-        print(f"output: {run_dir}")
+        print(f"策略参数: {decision_variables}")
+        print(f"投放点: {derived.release_point.tolist()}")
+        print(f"爆炸点: {derived.explosion_point.tolist()}")
+        print(f"快速评估时长: {fast.sum_objective:.15g}")
+        print(f"验证评估时长: {verify.sum_objective:.15g}")
+        print(f"遮挡区间: {_plain(verify.intervals_by_missile)}")
+        print(f"最大残差: {_max_residual(verify):.15g}")
+        print(f"状态: {status}")
+        print(f"输出目录: {run_dir}")
         return (0 if status == "succeeded" else 1), run_dir
     except Exception as exc:
         manifest.update(
@@ -363,16 +379,23 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
             }
         )
         save_json(manifest_path, manifest)
-        print(f"status: failed ({type(exc).__name__}: {exc})", file=sys.stderr)
+        print(f"状态: 失败 ({type(exc).__name__}: {exc})", file=sys.stderr)
         return 1, run_dir
 
 
 def main() -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    )
+    logger.info("问题一求解器启动")
     try:
         exit_code, _ = run(_parser().parse_args())
+        logger.info("问题一求解器完成, 退出码=%d", exit_code)
         return exit_code
     except Exception as exc:
-        print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        logger.exception("求解器运行过程中发生致命错误")
+        print(f"错误: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
 
 

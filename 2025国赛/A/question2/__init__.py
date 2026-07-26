@@ -1,4 +1,4 @@
-"""Question 2 single-bomb optimization."""
+"""问题2 单炸弹优化。"""
 
 from .model import (
     OptimizerResult,

@@ -1,4 +1,4 @@
-"""Tests for missile, UAV, bomb, and smoke-cloud kinematics."""
+"""测试导弹、无人机、炸弹和烟云的运动学。"""
 
 from __future__ import annotations
 

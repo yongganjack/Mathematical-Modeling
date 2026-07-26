@@ -1,12 +1,15 @@
-"""Route library, coarse joint-coverage model, and lexicographic integer PSO."""
+"""路径库、粗粒度联合覆盖模型和字典序整数PSO。"""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field, replace
 from itertools import product
 from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from question1.data_processing import ProblemData, sample_cylinder_surface, visible_mask
 from question1.evaluation import check_solution
@@ -71,14 +74,14 @@ class RouteOptimizationResult:
 
 
 def decode_route_particle(position: Sequence[float], route_counts: Sequence[int]) -> tuple[int, ...]:
-    """Round a real particle to legal route ids after clipping each dimension."""
+    """将实数粒子裁剪各维度后，取整为合法的路径ID。"""
 
     values = np.asarray(position, dtype=float)
     counts = np.asarray(route_counts, dtype=int)
     if values.shape != counts.shape or values.ndim != 1 or np.any(counts <= 0):
-        raise ValueError("position and positive route_counts must be equal-length vectors")
+        raise ValueError("position 和 positive route_counts 必须为等长向量")
     if not np.all(np.isfinite(values)):
-        raise ValueError("particle position must be finite")
+        raise ValueError("粒子位置必须为有限值")
     clipped = np.clip(values, 0.0, counts.astype(float) - 1.0)
     return tuple(np.floor(clipped + 0.5).astype(int).tolist())
 
@@ -86,7 +89,7 @@ def decode_route_particle(position: Sequence[float], route_counts: Sequence[int]
 def enumerate_lexicographic(
     route_counts: Sequence[int], evaluator: Callable[[tuple[int, ...]], Score], epsilon_J: float
 ) -> tuple[tuple[int, ...], Score]:
-    """Reference enumerator: preserve near-best Jsum, then maximize Jmin."""
+    """参考枚举器：保留接近最优的Jsum，然后最大化Jmin。"""
 
     candidates = [(tuple(ids), tuple(map(float, evaluator(tuple(ids))))) for ids in product(*(range(int(n)) for n in route_counts))]
     best_sum = max(score[0] for _, score in candidates)
@@ -112,8 +115,10 @@ def build_coarse_grid(data: ProblemData, dt: float = 0.5, target_surface_points:
 
 
 def route_coverage(route: Route, grid: CoarseGrid, data: ProblemData) -> dict[int, np.ndarray]:
-    """Point-level blocked masks; clouds are ORed but points remain independent."""
+    """点级遮挡掩码；烟雾云取或运算，但点保持独立。"""
 
+    logger.debug("route_coverage: 计算路径 %d (UAV %d, source=%s) 的覆盖率",
+                 route.route_index, route.uav_index, route.source)
     plan = route.to_plan()
     derived = [derive_bomb(plan, bomb, data) for bomb in plan.bombs]
     result: dict[int, np.ndarray] = {}
@@ -192,7 +197,7 @@ def _bomb_pattern(uav_index: int, labels: Sequence[int], offset: float, data: Pr
 
 
 def _intercept_routes(uav_index: int, data: ProblemData) -> list[Route]:
-    """Place smoke centers directly on sampled missile-to-target sight lines."""
+    """将烟雾中心直接放置在采样的导弹到目标视线上。"""
 
     origin = np.asarray(data.uav_init[uav_index], dtype=float)
     target_xy = np.asarray(data.target_center_xy, dtype=float)
@@ -242,7 +247,7 @@ def _intercept_routes(uav_index: int, data: ProblemData) -> list[Route]:
 
 
 def generate_route_candidates(uav_index: int, data: ProblemData, rng: np.random.Generator) -> list[Route]:
-    """Small deterministic geometry library plus seeded Latin-hypercube-like variants."""
+    """小型确定性几何库加上基于种子的类拉丁超立方变体。"""
 
     origin = np.asarray(data.uav_init[uav_index], dtype=float)
     target = np.array([data.target_center_xy[0], data.target_center_xy[1], 0.0])
@@ -267,7 +272,7 @@ def generate_route_candidates(uav_index: int, data: ProblemData, rng: np.random.
         plan = UAVPlan(uav_index, heading, speeds[index % 3], bombs)
         if check_solution([plan], 5, data).feasible:
             routes.append(Route(len(routes), uav_index, heading, speeds[index % 3], bombs, tuple(b.assigned_missile for b in bombs), {}, {"template": index}, "deterministic"))
-    # Four reproducible stratified variants widen heading, speed, and timing coverage.
+    # 四个可重复的分层变体扩展航向、速度和时序的覆盖范围。
     for sample in range(4):
         stratum = (sample + rng.random(3)) / 4.0
         heading = base + (stratum[0] - 0.5) * 0.7
@@ -301,6 +306,8 @@ def _label_bombs(route: Route, grid: CoarseGrid, data: ProblemData) -> Route:
 
 
 def build_route_library(data: ProblemData, runtime: Mapping[str, Any], seed: int = 2025) -> RouteLibrary:
+    logger.info("build_route_library: 开始构建, dt_cov=%.2f, target_surface_points=%d, max_routes_per_uav=%d",
+                float(runtime["dt_cov"]), int(runtime["target_surface_points"]), int(runtime["max_routes_per_uav"]))
     grid = build_coarse_grid(data, float(runtime["dt_cov"]), int(runtime["target_surface_points"]))
     seeds = np.random.SeedSequence(seed).spawn(5)
     all_routes: list[list[Route]] = []
@@ -330,12 +337,15 @@ def build_route_library(data: ProblemData, runtime: Mapping[str, Any], seed: int
         chosen = [empty, *nonempty[: max(0, int(runtime["max_routes_per_uav"]) - 1)]]
         routes = [replace(item[0], route_index=index) for index, item in enumerate(chosen)]
         all_routes.append(routes); all_coverage.append([item[1] for item in chosen])
+        logger.debug("build_route_library: UAV %d: 候选 %d 个, 去重后 %d 个, 最终保留 %d 个",
+                     uav, len(candidates), len(unique), len(chosen))
+    logger.info("build_route_library: 完成, 各UAV路径数量: %s", [len(r) for r in all_routes])
     return RouteLibrary(all_routes, all_coverage, grid)
 
 
 def evaluate_route_ids(route_ids: Sequence[int], library: RouteLibrary) -> Score:
     if len(route_ids) != 5:
-        raise ValueError("five route ids are required")
+        raise ValueError("需要五个路径 ID")
     coverages = [library.coverage[uav][int(route_id)] for uav, route_id in enumerate(route_ids)]
     return approximate_score(coverages, library.grid)
 
@@ -351,6 +361,8 @@ def _integer_pso_stage(
     evaluation_offset: int,
 ) -> tuple[tuple[int, ...], Score, list[dict[str, Any]], int]:
     counts = np.asarray([len(routes) for routes in library.routes], dtype=int)
+    logger.info("PSO 阶段 %d: 开始, 粒子数=%d, 迭代次数=%d, 阈值=%s, 路径数量=%s",
+                stage, particles, iterations, threshold, counts.tolist())
     lower = np.zeros(5); upper = counts.astype(float) - 1.0
     positions = rng.uniform(lower, upper, size=(particles, 5)); velocities = np.zeros_like(positions)
     if initial_ids is not None:
@@ -391,21 +403,35 @@ def _integer_pso_stage(
             "sum_residual": None if threshold is None else global_score[0] - threshold,
             "termination": "iteration_budget" if iteration + 1 == iterations else "running",
         })
+        log_interval = max(1, iterations // 5)
+        if (iteration + 1) % log_interval == 0 or iteration == iterations - 1:
+            logger.info("PSO 阶段 %d 迭代 %d/%d: Jsum=%.3f, Jmin=%.3f, 多样性=%.4f, 评估次数=%d",
+                        stage, iteration + 1, iterations, global_score[0], global_score[1], diversity,
+                        evaluation_offset + evaluations)
+    logger.info("PSO 阶段 %d: 完成, 最终 Jsum=%.3f, Jmin=%.3f, 评估次数=%d",
+                stage, global_score[0], global_score[1], evaluations)
     return global_ids, global_score, history, evaluations
 
 
 def solve_integer_routes(library: RouteLibrary, runtime: Mapping[str, Any], rng: np.random.Generator | None = None) -> RouteOptimizationResult:
+    logger.info("solve_integer_routes: 开始双阶段整数PSO优化")
     rng = rng or np.random.default_rng(2025)
     particles = int(runtime["pso_particles"])
     ids1, score1, history1, eval1 = _integer_pso_stage(
         library, rng, particles, int(runtime["stage1_iterations"]), 1, None, None, 0
     )
+    logger.info("solve_integer_routes: 阶段1完成, 最佳 Jsum=%.3f, Jmin=%.3f, 评估次数=%d",
+                score1[0], score1[1], eval1)
     epsilon = float(runtime["epsilon_J"]); threshold = score1[0] - epsilon
+    logger.info("solve_integer_routes: Stage 2 阈值 Jsum >= %.3f (epsilon_J=%.3f)", threshold, epsilon)
     ids2, score2, history2, eval2 = _integer_pso_stage(
         library, rng, particles, int(runtime["stage2_iterations"]), 2, threshold, ids1, eval1
     )
     if score2[0] < threshold - 1e-12:
         ids2, score2 = ids1, score1
+        logger.info("solve_integer_routes: Stage 2 未达到阈值, 退回 Stage 1 结果")
+    logger.info("solve_integer_routes: 完成, 最终 Jsum=%.3f, Jmin=%.3f, 总评估=%d, 选定IDs=%s",
+                score2[0], score2[1], eval1 + eval2, list(ids2))
     selected = tuple(library.routes[uav][route_id] for uav, route_id in enumerate(ids2))
     return RouteOptimizationResult(ids2, selected, score1, score2, epsilon, history1 + history2, eval1 + eval2, {"stage1": "iteration_budget", "stage2": "iteration_budget"})
 
@@ -413,14 +439,18 @@ def solve_integer_routes(library: RouteLibrary, runtime: Mapping[str, Any], rng:
 def refine_selected_routes(
     routes: Sequence[Route], library: RouteLibrary, data: ProblemData, runtime: Mapping[str, Any]
 ) -> tuple[tuple[Route, ...], dict[str, Any]]:
-    """Keep quick runs honest; competition profiles may enable a tiny bounded DE."""
+    """保持快速运行的真实性；比赛配置可启用一个小范围的边界差分进化。"""
 
     before = approximate_score([route_coverage(route, library.grid, data) for route in routes], library.grid)
+    logger.info("refine_selected_routes: 开始, 细化前 Jsum=%.3f, Jmin=%.3f, 细化开关=%s",
+                before[0], before[1], bool(runtime.get("refine", False)))
     if not bool(runtime.get("refine", False)):
+        logger.info("refine_selected_routes: 快速模式下跳过细化")
         return tuple(routes), {"applied": False, "skipped": True, "reason": "skipped_quick_budget", "before": before, "after": before, "gain": [0.0, 0.0]}
     try:
         from scipy.optimize import differential_evolution
     except ImportError:
+        logger.info("refine_selected_routes: scipy不可用, 跳过细化")
         return tuple(routes), {"applied": False, "skipped": True, "reason": "scipy_unavailable", "before": before, "after": before, "gain": [0.0, 0.0]}
 
     dimensions: list[tuple[int, int, str]] = []
@@ -465,4 +495,7 @@ def refine_selected_routes(
     after = approximate_score([route_coverage(route, library.grid, data) for route in refined], library.grid)
     if after[1] < before[1] - 1e-12:
         refined, after = tuple(routes), before
+        logger.info("refine_selected_routes: 细化后Jmin变差, 回退到原始结果")
+    logger.info("refine_selected_routes: 完成, 评估次数=%d, 细化前(Jsum=%.3f, Jmin=%.3f), 细化后(Jsum=%.3f, Jmin=%.3f)",
+                int(result.nfev), before[0], before[1], after[0], after[1])
     return tuple(refined), {"applied": True, "skipped": False, "reason": "differential_evolution_completed", "before": before, "after": after, "gain": [after[0] - before[0], after[1] - before[1]], "evaluations": int(result.nfev)}

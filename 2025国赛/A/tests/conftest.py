@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for the smoke-interference solver."""
+"""烟幕干扰求解器的共享 pytest 夹具。"""
 
 from __future__ import annotations
 
@@ -16,14 +16,14 @@ if str(PROJECT_ROOT) not in sys.path:
 
 @pytest.fixture
 def project_root() -> Path:
-    """Return the directory containing the question packages and configs."""
+    """返回包含各题目包和配置文件的目录。"""
 
     return PROJECT_ROOT
 
 
 @pytest.fixture
 def quick_config(project_root: Path) -> dict[str, Any]:
-    """Load the reproducible quick profile used by most unit tests."""
+    """加载大多数单元测试使用的可复现快速配置文件。"""
 
     from question1.data_processing import load_config
 
@@ -32,7 +32,7 @@ def quick_config(project_root: Path) -> dict[str, Any]:
 
 @pytest.fixture
 def problem_data(quick_config: dict[str, Any]):
-    """Return validated problem constants loaded from the quick profile."""
+    """返回从快速配置文件中加载并验证的问题常量。"""
 
     from question1.data_processing import load_problem_data
 

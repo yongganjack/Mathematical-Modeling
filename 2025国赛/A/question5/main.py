@@ -1,10 +1,11 @@
-"""Run Question 5: lexicographic five-UAV route optimization for M1--M3."""
+"""运行问题5：针对M1-M3的字典序五无人机路径优化。"""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import importlib.metadata
+import logging
 import math
 import platform
 import subprocess
@@ -18,6 +19,7 @@ from typing import Any
 
 import numpy as np
 
+logger = logging.getLogger(__name__)
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
@@ -43,7 +45,7 @@ def _resolve_input(path: str | Path) -> Path:
 def _positive_float(text: str) -> float:
     value = float(text)
     if not np.isfinite(value) or value <= 0.0:
-        raise argparse.ArgumentTypeError("must be a finite number greater than 0")
+        raise argparse.ArgumentTypeError("必须为大于 0 的有限数")
     return value
 
 
@@ -57,9 +59,9 @@ def _scale_budgets(config: dict[str, Any], scale: float | None) -> None:
 
 
 def _print_config_summary(config: Mapping[str, Any]) -> None:
-    print(f"profile: {config['profile']}")
-    print(f"master_seed: {config['master_seed']}")
-    print(f"budgets: {config['optimization']['budgets']}")
+    print(f"配置方案: {config['profile']}")
+    print(f"主随机种子: {config['master_seed']}")
+    print(f"优化预算: {config['optimization']['budgets']}")
 
 
 def _plain(value: Any) -> Any:
@@ -97,6 +99,9 @@ def _parser() -> argparse.ArgumentParser:
 def run(args: argparse.Namespace) -> tuple[int, Path]:
     wall_start = time.perf_counter(); started = _utc_now()
     config_path = _resolve_input(args.config); config = load_config(config_path); data = load_problem_data(config)
+    logger.info("加载配置: %s", config_path)
+    logger.info("配置概要: profile=%s, master_seed=%s, budget_scale=%s",
+                config['profile'], config['master_seed'], getattr(args, 'budget_scale', None))
     _scale_budgets(config, getattr(args, "budget_scale", None))
     if getattr(args, "validate_config_only", False):
         _print_config_summary(config)
@@ -116,26 +121,40 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
     try:
         save_json(run_dir / "config.json", config)
         save_json(run_dir / "input_snapshot.json", {name: getattr(data, name) for name in data.__dataclass_fields__})
-        library_started = time.perf_counter(); library = build_route_library(data, runtime, 2025); library_seconds = time.perf_counter() - library_started
+        library_started = time.perf_counter()
+        logger.info("开始构建路径库 (dt_cov=%.2f, target_surface_points=%d, max_routes_per_uav=%d)...",
+                    runtime['dt_cov'], runtime['target_surface_points'], runtime['max_routes_per_uav'])
+        library = build_route_library(data, runtime, 2025); library_seconds = time.perf_counter() - library_started
         route_counts = [len(routes) for routes in library.routes]
+        logger.info("路径库构建完成，耗时 %.3f 秒, 路径数量: %s", library_seconds, route_counts)
         save_json(run_dir / "route_library.json", {
             "dt_cov": library.grid.dt, "target_surface_points": len(library.grid.surface_points),
             "route_counts": route_counts,
             "routes": [[route_to_dict(route) for route in routes] for routes in library.routes],
         })
 
-        pso_started = time.perf_counter(); result = solve_integer_routes(library, runtime, np.random.default_rng(2025)); pso_seconds = time.perf_counter() - pso_started
+        pso_started = time.perf_counter()
+        logger.info("开始整数PSO优化 (particles=%d, stage1_iters=%d, stage2_iters=%d, epsilon_J=%.3f)...",
+                    runtime['pso_particles'], runtime['stage1_iterations'], runtime['stage2_iterations'], runtime['epsilon_J'])
+        result = solve_integer_routes(library, runtime, np.random.default_rng(2025)); pso_seconds = time.perf_counter() - pso_started
+        logger.info("整数PSO完成，耗时 %.3f 秒, 总评估次数=%d, 选定路径IDs=%s",
+                    pso_seconds, result.evaluations, list(result.selected_ids))
+        logger.info("PSO结果: Stage1(Jsum=%.3f, Jmin=%.3f), Stage2(Jsum=%.3f, Jmin=%.3f)",
+                    result.stage1_best[0], result.stage1_best[1], result.stage2_best[0], result.stage2_best[1])
         refined_routes, refine = refine_selected_routes(result.selected_routes, library, data, runtime)
         coarse = coarse_selected_summary(refined_routes, library, data)
+        logger.info("路径粗粒度评估: Jsum=%.3f, Jmin=%.3f", coarse['Jsum'], coarse['Jmin'])
         fast, verify = evaluate_final_routes(refined_routes, data, config)
         if not verify.feasible:
-            raise RuntimeError(f"selected Q5 solution is infeasible: {dict(verify.violations)}")
+            raise RuntimeError(f"选定的 Q5 解不可行: {dict(verify.violations)}")
         contributions = contribution_analysis(refined_routes, data, config)
         plans = routes_to_plans(refined_routes)
+        logger.info("导出Excel模板并验证...")
         excel_path, excel_validation = export_result3(
             plans, data, template, run_dir / "excel" / "result3.xlsx", contributions["sequential_lookup"]
         )
         save_json(run_dir / "excel" / "export_validation.json", _plain(excel_validation))
+        logger.info("Excel导出完成: %s (验证通过=%s)", excel_path, excel_validation['valid'])
 
         bomb_rows: list[dict[str, Any]] = []
         for plan in plans:
@@ -197,31 +216,34 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
                 })
         _write_csv(run_dir / "convergence.csv", ["profile", "missile_index", "duration", "Jsum", "Jmin", "time_step", "target_surface_points"], convergence_rows)
         if not args.no_plots:
+            logger.info("生成诊断图表...")
             from question5.visualization import plot_duration_bars, plot_intervals, plot_stage_history, plot_trajectories
             plot_trajectories(data, plans, run_dir); plot_duration_bars(verify_durations, run_dir)
             plot_stage_history(result.history, run_dir); plot_intervals(verify.intervals_by_missile, run_dir)
+            logger.info("图表生成完成")
 
         status = "succeeded" if verify.feasible and np.all(np.isfinite(verify_durations)) and excel_validation["valid"] else "failed"
         manifest.update({"finished_at": _utc_now(), "status": status}); save_json(manifest_path, manifest)
         elapsed = time.perf_counter() - wall_start
-        print(f"route counts: {route_counts}")
-        print(f"integer PSO evaluations: {result.evaluations}")
-        print(f"selected route ids: {list(result.selected_ids)}")
-        print(f"refine: {'applied' if refine['applied'] else 'skipped'} ({refine['reason']})")
-        print(f"verify: T1={verify_durations[0]:.6f}, T2={verify_durations[1]:.6f}, T3={verify_durations[2]:.6f}, Jsum={float(verify.sum_objective):.6f}, Jmin={float(verify.min_duration):.6f}")
-        print(f"excel: {excel_path} (validated={excel_validation['valid']})")
-        print(f"elapsed: {elapsed:.3f}s"); print(f"status: {status}"); print(f"output: {run_dir}")
+        print(f"路径数量: {route_counts}")
+        print(f"整数PSO评估次数: {result.evaluations}")
+        print(f"选定路径ID: {list(result.selected_ids)}")
+        print(f"细化: {'已应用' if refine['applied'] else '已跳过'} ({refine['reason']})")
+        print(f"验证: T1={verify_durations[0]:.6f}, T2={verify_durations[1]:.6f}, T3={verify_durations[2]:.6f}, Jsum={float(verify.sum_objective):.6f}, Jmin={float(verify.min_duration):.6f}")
+        print(f"Excel: {excel_path} (验证通过={excel_validation['valid']})")
+        print(f"耗时: {elapsed:.3f}s"); print(f"状态: {status}"); print(f"输出目录: {run_dir}")
         return (0 if status == "succeeded" else 1), run_dir
     except Exception as exc:
         manifest.update({"finished_at": _utc_now(), "status": "failed"}); save_json(manifest_path, manifest)
-        print(f"status: failed ({type(exc).__name__}: {exc})", file=sys.stderr); print(f"output: {run_dir}", file=sys.stderr)
+        print(f"状态: 失败 ({type(exc).__name__}: {exc})", file=sys.stderr); print(f"输出目录: {run_dir}", file=sys.stderr)
         return 1, run_dir
 
 
 def main() -> int:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     try: return run(_parser().parse_args())[0]
     except Exception as exc:
-        print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print(f"错误: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
 
 

@@ -1,4 +1,4 @@
-"""Tests for deterministic target-surface sampling and visibility."""
+"""测试确定性目标表面采样和可见性判断。"""
 
 from __future__ import annotations
 
@@ -74,10 +74,10 @@ def test_visibility_filters_back_side_and_keeps_front_and_silhouette(
     silhouette_xy = problem_data.target_center_xy + tangent_offset
     points = np.array(
         [
-            [center_x + radius, center_y, 5.0],  # front, toward M1
-            [center_x - radius, center_y, 5.0],  # back
+            [center_x + radius, center_y, 5.0],  # 正面，朝向导弹 M1
+            [center_x - radius, center_y, 5.0],  # 背面
             [silhouette_xy[0], silhouette_xy[1], 5.0],
-            [center_x, center_y, problem_data.target_height],  # top
+            [center_x, center_y, problem_data.target_height],  # 顶面
         ],
         dtype=np.float64,
     )

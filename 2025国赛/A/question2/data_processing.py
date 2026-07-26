@@ -1,4 +1,4 @@
-"""Small deterministic candidate generators for Question 2."""
+"""问题2的小型确定性候选生成器。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from question1.model import missile_hit_time
 
 
 def q2_bounds(data: ProblemData) -> list[tuple[float, float]]:
-    """Return bounds for ``[heading, speed, release, fuse]``."""
+    """返回 ``[heading, speed, release, fuse]`` 的边界。"""
 
     hit = missile_hit_time(0, data)
     max_fuse = min(float(data.uav_init[0, 2]) * 2.0 / float(data.gravity), hit)
@@ -24,7 +24,7 @@ def q2_bounds(data: ProblemData) -> list[tuple[float, float]]:
 def latin_hypercube_candidates(
     data: ProblemData, count: int, rng: np.random.Generator
 ) -> np.ndarray:
-    """Generate a small deduplicated Latin-hypercube candidate set."""
+    """生成一个小型的去重拉丁超立方候选集。"""
 
     if count <= 0:
         return np.empty((0, 4), dtype=float)
@@ -37,13 +37,13 @@ def latin_hypercube_candidates(
 
 
 def fixed_q1_candidate(data: ProblemData) -> np.ndarray:
-    """Return the Q1 fixed strategy expressed in Q2 coordinates."""
+    """返回以问题2坐标表示的问题1固定策略。"""
 
     return np.asarray([np.pi, 120.0, 1.5, 3.6], dtype=float)
 
 
 def q2_config(config: Mapping[str, Any] | None) -> dict[str, int]:
-    """Resolve bounded PSO/DE budgets, keeping quick runs genuinely small."""
+    """解析有界的PSO/DE预算，保持快速运行的真实小规模。"""
 
     runtime = (config or {}).get("optimization", {}).get("q2_runtime", {})
     if runtime:

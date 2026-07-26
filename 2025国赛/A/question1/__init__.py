@@ -1,4 +1,4 @@
-"""Question 1 foundations for the smoke-interference solver."""
+"""问题一：烟雾干扰求解器的基础模块。"""
 
 from .data_processing import (
     ProblemData,

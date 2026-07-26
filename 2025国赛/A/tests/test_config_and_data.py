@@ -1,4 +1,4 @@
-"""Tests for configuration, fixed problem data, and output utilities."""
+"""测试配置、固定问题数据和输出工具函数。"""
 
 from __future__ import annotations
 

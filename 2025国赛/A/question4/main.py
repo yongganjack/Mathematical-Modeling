@@ -1,10 +1,11 @@
-"""Run Question 4: FY1, FY2, and FY3 each deploy one smoke bomb."""
+"""运行问题4：FY1、FY2和FY3各投放一枚烟雾弹。"""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import importlib.metadata
+import logging
 import math
 import platform
 import subprocess
@@ -16,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path: sys.path.insert(0, str(PROJECT_DIR))
@@ -36,7 +39,7 @@ def _resolve_input(path: str | Path) -> Path:
 def _positive_float(text: str) -> float:
     value = float(text)
     if not np.isfinite(value) or value <= 0.0:
-        raise argparse.ArgumentTypeError("must be a finite number greater than 0")
+        raise argparse.ArgumentTypeError("必须为大于 0 的有限数")
     return value
 def _scale_budgets(config: dict[str, Any], scale: float | None) -> None:
     if scale is None: return
@@ -45,9 +48,9 @@ def _scale_budgets(config: dict[str, Any], scale: float | None) -> None:
             if isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(value, bool):
                 config["optimization"]["budgets"][question][name] = max(1, int(float(value) * scale))
 def _print_config_summary(config: Mapping[str, Any]) -> None:
-    print(f"profile: {config['profile']}")
-    print(f"master_seed: {config['master_seed']}")
-    print(f"budgets: {config['optimization']['budgets']}")
+    print(f"配置方案: {config['profile']}")
+    print(f"主随机种子: {config['master_seed']}")
+    print(f"优化预算: {config['optimization']['budgets']}")
 def _plain(value: Any) -> Any:
     if isinstance(value, Mapping): return {str(key): _plain(item) for key, item in value.items()}
     if isinstance(value, np.ndarray): return value.tolist()
@@ -70,6 +73,8 @@ def _parser() -> argparse.ArgumentParser:
 
 def run(args: argparse.Namespace) -> tuple[int, Path]:
     started = _utc_now(); wall_started = time.perf_counter(); config_path = _resolve_input(args.config); config = load_config(config_path); data = load_problem_data(config)
+    logger.info("加载配置: %s, 方案=%s, 主种子=%s", config_path, config.get("profile"), config.get("master_seed"))
+    logger.info("问题数据已加载, 目标中心=%s, UAV数量=%d", data.target_center_xy, len(data.uav_init))
     _scale_budgets(config, getattr(args, "budget_scale", None))
     if getattr(args, "validate_config_only", False):
         _print_config_summary(config)
@@ -83,15 +88,23 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
     try:
         save_json(run_dir / "config.json", config); save_json(run_dir / "input_snapshot.json", {name: getattr(data, name) for name in data.__dataclass_fields__})
         pso_seed, de_seed = np.random.SeedSequence(2025).spawn(2)
+        t_opt_start = time.perf_counter()
+        logger.info("开始求解 question4 优化...")
         result = solve_question4(data, config, np.random.default_rng(pso_seed), np.random.default_rng(de_seed))
+        t_opt_elapsed = time.perf_counter() - t_opt_start
+        pso, de = result.metadata["pso"], result.metadata["de"]
+        logger.info("优化完成, 耗时 %.2f 秒, PSO最优=%.4f (%d次评估), DE最优=%.4f (%d次评估), 选中来源=%s",
+                    t_opt_elapsed, pso.best_score, pso.evaluations, de.best_score, de.evaluations,
+                    result.metadata["selected_source"])
         plans = decode_q4_candidate(result.best_position, data); derived = [derive_bomb(plan, plan.bombs[0], data) for plan in plans]
         verified = result.metadata["verified_evaluation"]
-        if verified is None: raise RuntimeError("best Q4 candidate did not produce an evaluation")
+        if verified is None: raise RuntimeError("最佳 Q4 候选解未产生评估结果")
         contributions = uav_contributions(plans, data, config, "verify")
         sequential = [contributions["sequential_marginal"][index] for index in range(3)]
+        logger.info("开始导出 result2.xlsx 到 %s ...", run_dir / "excel" / "result2.xlsx")
         excel_path, excel_validation = export_result2(plans, derived, data, template, run_dir / "excel" / "result2.xlsx", sequential)
+        logger.info("result2.xlsx 导出完成, 验证通过=%s, 路径=%s", excel_validation["valid"], excel_path)
         save_json(run_dir / "excel" / "export_validation.json", excel_validation)
-        pso, de = result.metadata["pso"], result.metadata["de"]
         rows = []
         for plan, bomb in zip(plans, derived):
             rows.append({"uav_index": plan.uav_index, "heading_rad": plan.heading_rad, "heading_deg": float(np.degrees(plan.heading_rad) % 360.0), "direction": direction_from_heading(plan.heading_rad), "speed": plan.speed, "bomb_index": 1, "assigned_missile": 0, "release_time": bomb.release_time, "fuse_delay": bomb.fuse_delay, "explosion_time": bomb.explosion_time, "release_point": bomb.release_point, "explosion_point": bomb.explosion_point, "sequential_marginal": contributions["sequential_marginal"][plan.uav_index]})
@@ -107,18 +120,26 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
         fast_best = max(float(pso.best_score), float(de.best_score), *map(float, result.metadata["seed_fast_scores"].values()))
         _write_csv(run_dir / "convergence.csv", ["profile", "duration", "time_step", "target_surface_points"], [{"profile": "fast", "duration": fast_best, **config["sampling"]["fast"]}, {"profile": "verify", "duration": float(verified.duration_by_missile[0]), **config["sampling"]["verify"]}])
         if not args.no_plots:
+            logger.info("开始生成图表...")
             from question4.visualization import plot_contributions, plot_intervals, plot_optimizer_history, plot_trajectory
             plot_trajectory(data, plans, derived, run_dir); plot_intervals(verified.intervals_by_missile, run_dir); plot_contributions(contributions, run_dir); plot_optimizer_history(history, run_dir)
+            logger.info("图表生成完成, 输出目录=%s", run_dir)
         status = "succeeded" if verified.feasible and math.isfinite(float(verified.duration_by_missile[0])) and excel_validation["valid"] else "failed"
         manifest.update({"finished_at": _utc_now(), "status": status, "elapsed_seconds": time.perf_counter() - wall_started}); save_json(manifest_path, manifest)
-        print(f"verified objective: {float(verified.duration_by_missile[0]):.15g}"); print(f"actual evaluations: PSO={pso.evaluations}, DE={de.evaluations}, total={result.metadata['evaluation_counts']['total']}"); print(f"excel: {excel_path} (validated={excel_validation['valid']})"); print(f"elapsed seconds: {time.perf_counter() - wall_started:.3f}"); print(f"status: {status}"); print(f"output: {run_dir}")
+        print(f"验证目标值: {float(verified.duration_by_missile[0]):.15g}"); print(f"实际评估次数: PSO={pso.evaluations}, DE={de.evaluations}, 合计={result.metadata['evaluation_counts']['total']}"); print(f"Excel: {excel_path} (验证通过={excel_validation['valid']})"); print(f"耗时: {time.perf_counter() - wall_started:.3f}s"); print(f"状态: {status}"); print(f"输出目录: {run_dir}")
         return (0 if status == "succeeded" else 1), run_dir
     except Exception as exc:
-        manifest.update({"finished_at": _utc_now(), "status": "failed", "elapsed_seconds": time.perf_counter() - wall_started}); save_json(manifest_path, manifest); print(f"status: failed ({type(exc).__name__}: {exc})", file=sys.stderr); return 1, run_dir
+        manifest.update({"finished_at": _utc_now(), "status": "failed", "elapsed_seconds": time.perf_counter() - wall_started}); save_json(manifest_path, manifest); print(f"状态: 失败 ({type(exc).__name__}: {exc})", file=sys.stderr); return 1, run_dir
 
 def main() -> int:
-    try: return run(_parser().parse_args())[0]
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logger.info("question4 main() 启动")
+    try:
+        exit_code = run(_parser().parse_args())[0]
+        logger.info("question4 main() 完成, 退出码=%d", exit_code)
+        return exit_code
     except Exception as exc:
-        print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        logger.exception("question4 main() 异常退出: %s", exc)
+        print(f"错误: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
 if __name__ == "__main__": raise SystemExit(main())

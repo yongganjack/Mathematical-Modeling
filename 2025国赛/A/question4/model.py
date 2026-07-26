@@ -1,7 +1,8 @@
-"""Candidate decoding and cooperative optimization for Question 4."""
+"""问题4的候选解码与协同优化。"""
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -12,13 +13,16 @@ from question1.evaluation import EvaluationResult, evaluate_solution
 from question1.model import BombPlan, UAVPlan, max_fuse_delay, missile_hit_time
 from question2.model import OptimizerResult, solve_de, solve_pso
 
+logger = logging.getLogger(__name__)
+
 
 def decode_q4_candidate(candidate: Sequence[float], data: ProblemData) -> tuple[UAVPlan, UAVPlan, UAVPlan]:
-    """Repair the 12 variables into independent feasible FY1/FY2/FY3 plans."""
+    """将12个变量修复为独立的可行FY1/FY2/FY3计划。"""
 
     values = np.asarray(candidate, dtype=float)
+    logger.debug("decode_q4_candidate: 输入向量形状=%s", values.shape)
     if values.shape != (12,) or not np.all(np.isfinite(values)):
-        raise ValueError("Q4 candidate must be a finite 12-vector")
+        raise ValueError("Q4 候选解必须为有限 12 维向量")
     hit = missile_hit_time(0, data)
     plans: list[UAVPlan] = []
     for uav_index, offset in enumerate(range(0, 12, 4)):
@@ -34,7 +38,7 @@ def decode_q4_candidate(candidate: Sequence[float], data: ProblemData) -> tuple[
 def encode_q4_plans(plans: Sequence[UAVPlan]) -> np.ndarray:
     ordered = sorted(plans, key=lambda plan: plan.uav_index)
     if [plan.uav_index for plan in ordered] != [0, 1, 2] or any(len(plan.bombs) != 1 for plan in ordered):
-        raise ValueError("Q4 encoding requires FY1/FY2/FY3 with one bomb each")
+        raise ValueError("Q4 编码需要 FY1/FY2/FY3 各一枚炸弹")
     return np.asarray([
         value
         for plan in ordered
@@ -46,7 +50,7 @@ def q4_objective(
     candidate: Sequence[float], data: ProblemData, config: Mapping[str, Any],
     profile: str = "fast", return_evaluation: bool = False,
 ) -> float | tuple[float, EvaluationResult | None]:
-    """Score M1 pointwise joint coverage from all three simultaneous clouds."""
+    """计算三片同时烟雾云对M1的逐点联合覆盖得分。"""
 
     result: EvaluationResult | None = None
     try:
@@ -64,7 +68,7 @@ def _heading(origin: np.ndarray, destination_xy: np.ndarray) -> float:
 
 
 def _seed_candidates(data: ProblemData) -> list[np.ndarray]:
-    """Create staggered geometry starts; DE supplies Latin-hypercube exploration."""
+    """创建交错几何起始点；DE提供拉丁超立方探索。"""
 
     hit = missile_hit_time(0, data)
     destinations = (np.zeros(2), np.asarray(data.target_center_xy, dtype=float))
@@ -86,7 +90,7 @@ def solve_question4(
     data: ProblemData, config: Mapping[str, Any],
     pso_rng: np.random.Generator | None = None, de_rng: np.random.Generator | None = None,
 ) -> OptimizerResult:
-    """Run compact PSO/DE, then verify their best candidates and heuristics."""
+    """运行紧凑的PSO/DE优化，然后验证其最佳候选和启发式方案。"""
 
     from question4.data_processing import q4_bounds, q4_config
 
@@ -95,23 +99,33 @@ def solve_question4(
         pso_rng = pso_rng or np.random.default_rng(pso_seed)
         de_rng = de_rng or np.random.default_rng(de_seed)
     runtime = q4_config(config)
+    logger.info("solve_question4: 开始优化, 运行配置=%s", runtime)
     objective = lambda x: q4_objective(x, data, config, "fast")
     bounds = q4_bounds(data)
+    logger.info("开始PSO优化, particles=%d, iterations=%d", runtime["pso_particles"], runtime["pso_iterations"])
     pso = solve_pso(objective, bounds, pso_rng, runtime["pso_particles"], runtime["pso_iterations"])
+    logger.info("PSO完成, 最佳得分=%.4f, 评估次数=%d, 终止原因=%s", pso.best_score, pso.evaluations, pso.termination_reason)
+    logger.info("开始DE优化, particles=%d, iterations=%d", runtime["de_particles"], runtime["de_iterations"])
     de = solve_de(objective, bounds, de_rng, runtime["de_particles"], runtime["de_iterations"])
+    logger.info("DE完成, 最佳得分=%.4f, 评估次数=%d, 终止原因=%s", de.best_score, de.evaluations, de.termination_reason)
     for optimizer in (pso, de):
         optimizer.best_position = encode_q4_plans(decode_q4_candidate(optimizer.best_position, data))
 
     seeds = _seed_candidates(data)
+    logger.info("评估 %d 个种子候选...", len(seeds))
     seed_scores = [(float(objective(seed)), encode_q4_plans(decode_q4_candidate(seed, data))) for seed in seeds]
+    logger.info("种子候选快速评估分数: %s", {f"seed_{i}": s for i, (s, _) in enumerate(seed_scores, 1)})
     fast_candidates = [(pso.best_score, pso.best_position, "pso"), (de.best_score, de.best_position, "de")]
     fast_candidates.extend((score, seed, f"seed_{index}") for index, (score, seed) in enumerate(seed_scores, 1))
     verified: list[tuple[float, np.ndarray, str, EvaluationResult | None]] = []
-    for _, candidate, source in fast_candidates:
+    logger.info("开始验证模式评估 %d 个候选...", len(fast_candidates))
+    for idx, (_, candidate, source) in enumerate(fast_candidates):
         score, evaluation = q4_objective(candidate, data, config, "verify", return_evaluation=True)
         verified.append((float(score), np.asarray(candidate, dtype=float), source, evaluation))
+        logger.debug("候选 %d/%d (来源=%s): 验证得分=%.4f", idx + 1, len(fast_candidates), source, float(score))
     verified.sort(key=lambda item: item[0], reverse=True)
     best_score, best_position, selected_source, best_evaluation = verified[0]
+    logger.info("最佳候选来源=%s, 验证得分=%.4f, PSO最优=%.4f, DE最优=%.4f", selected_source, best_score, pso.best_score, de.best_score)
     counts = {
         "pso": pso.evaluations, "de": de.evaluations, "seeds": len(seed_scores),
         "verification": len(verified), "total": pso.evaluations + de.evaluations + len(seed_scores) + len(verified),

@@ -1,4 +1,4 @@
-"""PSO/DE optimizers and the Question 2 single-bomb objective."""
+"""PSO/DE优化器与问题2单炸弹目标函数。"""
 
 from __future__ import annotations
 
@@ -6,12 +6,16 @@ from dataclasses import dataclass, field
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+import logging
+
 import numpy as np
 from scipy.optimize import differential_evolution
 
 from question1.data_processing import ProblemData
 from question1.evaluation import EvaluationResult, evaluate_solution
 from question1.model import BombPlan, UAVPlan, missile_hit_time, max_fuse_delay
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -39,12 +43,13 @@ def _safe_score(value: Any) -> float:
 
 
 def solve_pso(objective: Callable[[np.ndarray], float], bounds: Sequence[tuple[float, float]], rng: np.random.Generator, particles: int = 16, iterations: int = 20) -> OptimizerResult:
-    """Maximize ``objective`` using a compact, reproducible PSO."""
+    """使用紧凑、可复现的PSO最大化 ``objective``。"""
 
     bounds_array = np.asarray(bounds, dtype=float)
     lower, upper = bounds_array[:, 0], bounds_array[:, 1]
     dim = len(bounds_array)
     particles, iterations = max(1, int(particles)), max(0, int(iterations))
+    logger.info("开始PSO优化: particles=%d, iterations=%d, dim=%d", particles, iterations, dim)
     positions = rng.uniform(lower, upper, size=(particles, dim))
     velocities = rng.uniform(-(upper - lower), upper - lower, size=(particles, dim)) * 0.1
     pbest = positions.copy()
@@ -60,6 +65,7 @@ def solve_pso(objective: Callable[[np.ndarray], float], bounds: Sequence[tuple[f
         history.append({"iteration": float(len(history)), "best": float(gbest_score), "mean": float(np.mean(pbest_scores)), "std": float(np.std(pbest_scores)), "diversity": float(np.mean(np.std(positions, axis=0))), "evaluations": float(evaluations)})
 
     record()
+    report_interval = max(1, iterations // 5)
     vmax = 0.5 * (upper - lower)
     for _ in range(iterations):
         inertia = 0.9 - 0.5 * (len(history) / max(iterations, 1))
@@ -76,13 +82,17 @@ def solve_pso(objective: Callable[[np.ndarray], float], bounds: Sequence[tuple[f
         if pbest_scores[index] > gbest_score:
             gbest_score, gbest = float(pbest_scores[index]), pbest[index].copy()
         record()
+        if len(history) % report_interval == 0:
+            logger.info("PSO迭代 %d/%d, 最佳=%.4f, 均值=%.4f, 评估次数=%d", len(history), iterations, gbest_score, np.mean(pbest_scores), evaluations)
+    logger.info("PSO完成: 最佳得分=%.4f, 评估次数=%d, 终止原因=%s", gbest_score, evaluations, "iterations_exhausted")
     return OptimizerResult(gbest, gbest_score, history, evaluations, "iterations_exhausted", "pso")
 
 
 def solve_de(objective: Callable[[np.ndarray], float], bounds: Sequence[tuple[float, float]], rng: np.random.Generator, particles: int = 8, iterations: int = 10) -> OptimizerResult:
-    """Maximize via SciPy differential evolution with Latin-hypercube init."""
+    """通过SciPy差分进化（拉丁超立方初始化）进行最大化。"""
 
     seed = int(rng.integers(0, 2**32 - 1))
+    logger.info("开始DE优化: particles=%d, iterations=%d, seed=%d", particles, iterations, seed)
     history: list[dict[str, float]] = []
     best_score = -1e15
     best_position = np.mean(np.asarray(bounds, dtype=float), axis=1)
@@ -103,13 +113,14 @@ def solve_de(objective: Callable[[np.ndarray], float], bounds: Sequence[tuple[fl
     result = differential_evolution(wrapped, list(bounds), seed=seed, popsize=max(1, int(particles)), maxiter=max(0, int(iterations)), init="latinhypercube", polish=False, updating="immediate", callback=callback, workers=1, tol=-1.0, atol=-1.0)
     if not history:
         history.append({"iteration": 0.0, "best": float(best_score), "mean": float(best_score), "std": 0.0, "diversity": 0.0, "evaluations": float(evaluations)})
+    logger.info("DE完成: 最佳得分=%.4f, 评估次数=%d, 终止原因=%s", best_score, evaluations, str(getattr(result, "message", "completed")))
     return OptimizerResult(best_position, best_score, history, evaluations, str(getattr(result, "message", "completed")), "de")
 
 
 def decode_q2_candidate(candidate: Sequence[float], data: ProblemData) -> UAVPlan:
     values = np.asarray(candidate, dtype=float)
     if values.shape != (4,) or not np.all(np.isfinite(values)):
-        raise ValueError("Q2 candidate must be a finite vector [theta, speed, release, tau]")
+        raise ValueError("Q2 候选解必须为有限向量 [theta, speed, release, tau]")
     theta, speed, release, tau = map(float, values)
     hit = missile_hit_time(0, data)
     theta = float((theta + np.pi) % (2.0 * np.pi) - np.pi)
@@ -139,9 +150,13 @@ def solve_question2(data: ProblemData, config: Mapping[str, Any], pso_rng: np.ra
         pso_rng = pso_rng or np.random.default_rng(pso_seed)
         de_rng = de_rng or np.random.default_rng(de_seed)
     budget = q2_config(config)
+    logger.info("开始问题2优化: pso_particles=%d, pso_iterations=%d, de_particles=%d, de_iterations=%d, max_evaluations=%d",
+                budget["pso_particles"], budget["pso_iterations"], budget["de_particles"], budget["de_iterations"], budget["max_evaluations"])
     objective = lambda x: q2_objective(x, data, config, "fast")
     pso = solve_pso(objective, q2_bounds(data), pso_rng, budget["pso_particles"], budget["pso_iterations"])
+    logger.info("PSO最佳得分: %.4f, 评估次数: %d", pso.best_score, pso.evaluations)
     de = solve_de(objective, q2_bounds(data), de_rng, budget["de_particles"], budget["de_iterations"])
+    logger.info("DE最佳得分: %.4f, 评估次数: %d", de.best_score, de.evaluations)
     for optimizer in (pso, de):
         plan = decode_q2_candidate(optimizer.best_position, data)
         bomb = plan.bombs[0]
@@ -150,10 +165,12 @@ def solve_question2(data: ProblemData, config: Mapping[str, Any], pso_rng: np.ra
             dtype=float,
         )
     candidates = [pso.best_position, de.best_position]
+    logger.info("开始验证阶段: 对 %d 个候选解进行verify评估", len(candidates))
     verified: list[tuple[float, np.ndarray, EvaluationResult | None]] = []
     for candidate in candidates:
         score, result = q2_objective(candidate, data, config, "verify", return_evaluation=True)
         verified.append((float(score), np.asarray(candidate, dtype=float), result))
     verified.sort(key=lambda item: item[0], reverse=True)
     best_score, best_position, best_eval = verified[0]
+    logger.info("验证完成: 最终最佳得分=%.4f, feasible=%s", best_score, best_eval.feasible if best_eval else "N/A")
     return OptimizerResult(best_position, best_score, pso.history + [{**row, "source": "de"} for row in de.history], pso.evaluations + de.evaluations, "pso_and_de_completed", "q2", {"pso": pso, "de": de, "verified_evaluation": best_eval, "fast_best": {"pso": pso.best_score, "de": de.best_score}, "verified_candidates": verified})

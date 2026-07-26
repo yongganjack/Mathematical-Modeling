@@ -1,4 +1,4 @@
-"""Evaluation and per-UAV contribution accounting for Question 4."""
+"""问题4的评估与每架UAV贡献核算。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def evaluate_q4_candidate(candidate: Sequence[float], data: ProblemData, config:
 def _duration(plans: Sequence[UAVPlan], data: ProblemData, config: Mapping[str, Any], profile: str) -> float:
     result = evaluate_solution(plans, [0], data, config["sampling"][profile], config["numerical"], question_id=5)
     if not result.feasible:
-        raise ValueError(f"partial Q4 plan is infeasible: {dict(result.violations)}")
+        raise ValueError(f"Q4 部分方案不可行: {dict(result.violations)}")
     return float(result.duration_by_missile[0])
 
 
@@ -27,15 +27,15 @@ def _nonnegative(value: float, label: str, tolerance: float = 1e-8) -> float:
         return float(value)
     if value >= -tolerance:
         return 0.0
-    raise ValueError(f"{label} is unexpectedly negative: {value}")
+    raise ValueError(f"{label} 意外为负数: {value}")
 
 
 def uav_contributions(plans: Sequence[UAVPlan], data: ProblemData, config: Mapping[str, Any], profile: str = "verify") -> dict[str, Any]:
-    """Compute standalone, stable sequential, and removal marginals for each UAV."""
+    """计算每架UAV的独立贡献、稳定序贯边际和移除边际。"""
 
     ordered_uavs = sorted(plans, key=lambda plan: plan.uav_index)
     if [plan.uav_index for plan in ordered_uavs] != [0, 1, 2] or any(len(plan.bombs) != 1 for plan in ordered_uavs):
-        raise ValueError("Q4 contribution analysis requires FY1/FY2/FY3 with one bomb each")
+        raise ValueError("Q4 贡献分析需要 FY1/FY2/FY3 各一枚炸弹")
     total = _duration(ordered_uavs, data, config, profile)
     standalone = {plan.uav_index: _duration([plan], data, config, profile) for plan in ordered_uavs}
     release_order = sorted(ordered_uavs, key=lambda plan: (plan.bombs[0].release_time, plan.uav_index, plan.bombs[0].bomb_index))

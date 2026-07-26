@@ -1,4 +1,4 @@
-"""Tests for finite line-of-sight segment geometry."""
+"""测试有限视线段的几何计算。"""
 
 from __future__ import annotations
 

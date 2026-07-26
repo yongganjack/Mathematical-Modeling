@@ -1,4 +1,4 @@
-"""Question 3 cooperative optimization for three bombs carried by FY1."""
+"""问题三：FY1 携带三枚烟雾弹的协同优化。"""
 
 from .model import decode_q3_candidate, q3_objective, solve_question3
 

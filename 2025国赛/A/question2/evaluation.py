@@ -1,4 +1,4 @@
-"""Evaluation adapters that delegate all geometry to Question 1."""
+"""将几何计算委托给问题1的评估适配器。"""
 
 from __future__ import annotations
 

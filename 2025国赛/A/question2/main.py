@@ -1,14 +1,16 @@
-"""Run the Question 2 single-UAV, single-bomb optimization."""
+"""运行问题2的单UAV、单炸弹优化。"""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import importlib.metadata
+import logging
 import math
 import platform
 import subprocess
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +18,7 @@ from typing import Any
 
 import numpy as np
 
+logger = logging.getLogger(__name__)
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
@@ -49,7 +52,7 @@ def _resolve_input(path: str | Path) -> Path:
 def _positive_float(text: str) -> float:
     value = float(text)
     if not np.isfinite(value) or value <= 0.0:
-        raise argparse.ArgumentTypeError("must be a finite number greater than 0")
+        raise argparse.ArgumentTypeError("必须为大于 0 的有限数")
     return value
 
 
@@ -63,9 +66,9 @@ def _scale_budgets(config: dict[str, Any], scale: float | None) -> None:
 
 
 def _print_config_summary(config: Mapping[str, Any]) -> None:
-    print(f"profile: {config['profile']}")
-    print(f"master_seed: {config['master_seed']}")
-    print(f"budgets: {config['optimization']['budgets']}")
+    print(f"配置方案: {config['profile']}")
+    print(f"主随机种子: {config['master_seed']}")
+    print(f"优化预算: {config['optimization']['budgets']}")
 
 
 def _plain(value: Any) -> Any:
@@ -121,7 +124,9 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
     started = _utc_now()
     config_path = _resolve_input(args.config)
     config = load_config(config_path)
+    logger.info("加载配置: %s (方案=%s)", config_path, config["profile"])
     data = load_problem_data(config)
+    logger.info("数据加载完成: %d 个导弹", len(data.missile_init))
     _scale_budgets(config, getattr(args, "budget_scale", None))
     if getattr(args, "validate_config_only", False):
         _print_config_summary(config)
@@ -136,7 +141,11 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
         save_json(run_dir / "config.json", config)
         save_json(run_dir / "input_snapshot.json", _snapshot(data))
         pso_seed, de_seed = np.random.SeedSequence(2025).spawn(2)
+        logger.info("开始问题2优化 (PSO+DE)...")
+        t_start = time.perf_counter()
         result = solve_question2(data, config, np.random.default_rng(pso_seed), np.random.default_rng(de_seed))
+        t_elapsed = time.perf_counter() - t_start
+        logger.info("优化完成: 最佳得分=%.4f, 耗时=%.2fs, 评估次数=%d", result.best_score, t_elapsed, result.evaluations)
         plan = __import__("question2.model", fromlist=["decode_q2_candidate"]).decode_q2_candidate(result.best_position, data)
         derived = derive_bomb(plan, plan.bombs[0], data)
         verified = result.metadata["verified_evaluation"]
@@ -176,25 +185,30 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
         convergence = [{"profile": "fast", "duration": float(fast_winner.best_score), "time_step": config["sampling"]["fast"]["time_step"], "target_surface_points": config["sampling"]["fast"]["target_surface_points"]}, {"profile": "verify", "duration": float(verified.duration_by_missile[0]), "time_step": config["sampling"]["verify"]["time_step"], "target_surface_points": config["sampling"]["verify"]["target_surface_points"]}]
         _write_csv(run_dir / "convergence.csv", ["profile", "duration", "time_step", "target_surface_points"], convergence)
         if not args.no_plots:
+            logger.info("开始生成图表...")
             from question2.visualization import plot_intervals, plot_optimizer_history, plot_trajectory
             plot_trajectory(data, plan, derived, run_dir); plot_intervals(verified.intervals_by_missile, run_dir); plot_optimizer_history(history, run_dir)
+            logger.info("图表生成完成: trajectory, intervals, optimization_history 已保存至 %s", run_dir)
         status = "succeeded" if verified.feasible and math.isfinite(float(verified.duration_by_missile[0])) else "failed"
         manifest.update({"finished_at": _utc_now(), "status": status}); save_json(manifest_path, manifest)
-        print(f"verified duration: {float(verified.duration_by_missile[0]):.15g}")
-        print(f"actual evaluations: PSO={pso.evaluations}, DE={de.evaluations}")
-        print(f"status: {status}"); print(f"output: {run_dir}")
+        print(f"验证时长: {float(verified.duration_by_missile[0]):.15g}")
+        print(f"实际评估次数: PSO={pso.evaluations}, DE={de.evaluations}")
+        print(f"状态: {status}"); print(f"输出目录: {run_dir}")
         return (0 if status == "succeeded" else 1), run_dir
     except Exception as exc:
         manifest.update({"finished_at": _utc_now(), "status": "failed"}); save_json(manifest_path, manifest)
-        print(f"status: failed ({type(exc).__name__}: {exc})", file=sys.stderr)
+        print(f"状态: 失败 ({type(exc).__name__}: {exc})", file=sys.stderr)
         return 1, run_dir
 
 
 def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    logger.info("问题2 主程序启动")
     try:
         return run(_parser().parse_args())[0]
     except Exception as exc:
-        print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        logger.error("程序异常: %s: %s", type(exc).__name__, exc)
+        print(f"错误: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
 
 

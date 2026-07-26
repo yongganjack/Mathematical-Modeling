@@ -1,4 +1,4 @@
-"""Final physical evaluation and contribution accounting for Question 5."""
+"""问题5的最终物理评估与贡献核算。"""
 
 from __future__ import annotations
 
@@ -16,14 +16,14 @@ from question5.model import Route, RouteLibrary, approximate_intervals, approxim
 def routes_to_plans(routes: Sequence[Route]) -> tuple[UAVPlan, ...]:
     ordered = sorted(routes, key=lambda route: route.uav_index)
     if [route.uav_index for route in ordered] != list(range(5)):
-        raise ValueError("Q5 requires one selected route for each of five UAVs")
+        raise ValueError("Q5 需要五个 UAV 各一条选定路径")
     return tuple(route.to_plan() for route in ordered)
 
 
 def evaluate_final_routes(
     routes: Sequence[Route], data: ProblemData, config: Mapping[str, Any]
 ) -> tuple[EvaluationResult, EvaluationResult]:
-    """Call the complete evaluator exactly once in fast and once in verify."""
+    """调用完整评估器各一次，分别使用快速模式和验证模式。"""
 
     plans = routes_to_plans(routes)
     fast = evaluate_solution(plans, [0, 1, 2], data, config["sampling"]["fast"], config["numerical"], question_id=5)
@@ -34,14 +34,14 @@ def evaluate_final_routes(
 def _durations(plans: Sequence[UAVPlan], data: ProblemData, config: Mapping[str, Any]) -> np.ndarray:
     result = evaluate_solution(plans, [0, 1, 2], data, config["sampling"]["fast"], config["numerical"], question_id=5)
     if not result.feasible:
-        raise ValueError(f"partial Q5 plan infeasible: {dict(result.violations)}")
+        raise ValueError(f"Q5 部分方案不可行: {dict(result.violations)}")
     return np.asarray(result.duration_by_missile, dtype=float)
 
 
 def contribution_analysis(
     routes: Sequence[Route], data: ProblemData, config: Mapping[str, Any]
 ) -> dict[str, Any]:
-    """Sequential bomb marginals and route removal marginals using fast evaluation."""
+    """使用快速评估计算序列炸弹边际贡献和路径移除边际贡献。"""
 
     plans = list(routes_to_plans(routes))
     ordered_bombs = sorted(

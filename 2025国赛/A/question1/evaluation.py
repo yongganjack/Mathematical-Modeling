@@ -1,4 +1,4 @@
-"""Joint smoke coverage, feasibility checks, and interval evaluation."""
+"""联合烟雾覆盖计算、可行性检查和区间评估。"""
 
 from __future__ import annotations
 
@@ -35,14 +35,14 @@ Interval = tuple[float, float]
 def _blocked_matrix(blocked: Any, *, require_points: bool = True) -> BoolArray:
     array = np.asarray(blocked, dtype=np.bool_)
     if array.ndim != 2:
-        raise ValueError("blocked must be a two-dimensional (clouds, points) array")
+        raise ValueError("blocked 必须为二维 (烟云数, 点数) 数组")
     if require_points and array.shape[1] == 0:
-        raise ValueError("blocked must contain at least one target point")
+        raise ValueError("blocked 必须包含至少一个目标点")
     return array
 
 
 def point_coverage(blocked: Any) -> BoolArray:
-    """Return whether each target point is covered by at least one cloud."""
+    """返回每个目标点是否被至少一个烟雾云覆盖。"""
 
     array = _blocked_matrix(blocked)
     if array.shape[0] == 0:
@@ -51,25 +51,25 @@ def point_coverage(blocked: Any) -> BoolArray:
 
 
 def joint_blocked(blocked: Any) -> bool:
-    """Return true exactly when the cloud union covers every target point."""
+    """仅当所有烟雾云的并集覆盖了每一个目标点时返回 True。"""
 
     array = _blocked_matrix(blocked, require_points=False)
     if array.shape[0] == 0:
         return False
     if array.shape[1] == 0:
-        raise ValueError("blocked must contain at least one target point")
+        raise ValueError("blocked 必须包含至少一个目标点")
     return bool(np.all(np.any(array, axis=0)))
 
 
 def coverage_ratio(blocked: Any) -> float:
-    """Return the fraction of target points covered by the cloud union."""
+    """返回被烟雾云并集覆盖的目标点比例。"""
 
     covered = point_coverage(blocked)
     return float(np.mean(covered))
 
 
 def standalone_blocked(blocked: Any) -> BoolArray:
-    """Return whether each individual cloud covers every target point."""
+    """返回每个单独的烟雾云是否覆盖了所有目标点。"""
 
     array = _blocked_matrix(blocked)
     return np.asarray(np.all(array, axis=1), dtype=np.bool_)
@@ -79,9 +79,9 @@ def _finite_nonnegative(value: Any, name: str) -> float:
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(f"{name} must be finite and non-negative") from exc
+        raise ValueError(f"{name} 必须为有限非负数") from exc
     if isinstance(value, (bool, np.bool_)) or not np.isfinite(result) or result < 0.0:
-        raise ValueError(f"{name} must be finite and non-negative")
+        raise ValueError(f"{name} 必须为有限非负数")
     return result
 
 
@@ -89,16 +89,16 @@ def _interval(value: Any) -> Interval:
     try:
         left, right = value
     except (TypeError, ValueError) as exc:
-        raise ValueError("each interval must contain exactly two endpoints") from exc
+        raise ValueError("每个区间必须恰好包含两个端点") from exc
     left_value = _finite_nonnegative(left, "interval endpoint")
     right_value = _finite_nonnegative(right, "interval endpoint")
     if right_value < left_value:
-        raise ValueError("interval right endpoint must not precede left endpoint")
+        raise ValueError("区间右端点不能早于左端点")
     return left_value, right_value
 
 
 def merge_intervals(intervals: Iterable[Sequence[float]], merge_tol: float = 0.0) -> list[Interval]:
-    """Merge closed intervals that overlap or are separated by at most ``merge_tol``."""
+    """合并相互重叠或间隔不超过 ``merge_tol`` 的闭区间。"""
 
     tolerance = _finite_nonnegative(merge_tol, "merge_tol")
     ordered = sorted((_interval(item) for item in intervals), key=lambda item: (item[0], item[1]))
@@ -115,7 +115,7 @@ def merge_intervals(intervals: Iterable[Sequence[float]], merge_tol: float = 0.0
 
 
 def interval_length(intervals: Iterable[Sequence[float]]) -> float:
-    """Return the summed lengths of validated closed intervals."""
+    """返回经验证的闭区间的长度总和。"""
 
     return float(sum(right - left for left, right in map(_interval, intervals)))
 
@@ -126,22 +126,22 @@ def refine_boundary(
     margin_fn: Callable[[float], float],
     root_tol: float,
 ) -> float:
-    """Refine a bracketed zero of a finite scalar margin with Brent's method."""
+    """使用 Brent 方法精细求解有限标量边际函数在括号区间内的零点。"""
 
     left_value = _finite_nonnegative(left, "left")
     right_value = _finite_nonnegative(right, "right")
     if right_value < left_value:
-        raise ValueError("right must not precede left")
+        raise ValueError("右端点不能早于左端点")
     tolerance = _finite_nonnegative(root_tol, "root_tol")
     if tolerance == 0.0:
-        raise ValueError("root_tol must be positive")
+        raise ValueError("root_tol 必须为正数")
     if not callable(margin_fn):
-        raise TypeError("margin_fn must be callable")
+        raise TypeError("margin_fn 必须为可调用对象")
 
     def checked_margin(time: float) -> float:
         value = float(margin_fn(float(time)))
         if not np.isfinite(value):
-            raise ValueError("margin_fn must return finite values")
+            raise ValueError("margin_fn 必须返回有限值")
         return value
 
     left_margin = checked_margin(left_value)
@@ -151,7 +151,7 @@ def refine_boundary(
     if right_margin == 0.0:
         return right_value
     if left_margin * right_margin > 0.0:
-        raise ValueError("margin_fn values do not bracket a root")
+        raise ValueError("margin_fn 的值未包围根")
     try:
         return float(
             brentq(
@@ -163,7 +163,7 @@ def refine_boundary(
             )
         )
     except ValueError as exc:
-        raise ValueError(f"failed to refine bracketed boundary: {exc}") from exc
+        raise ValueError(f"精细求解括号边界失败: {exc}") from exc
 
 
 def boolean_intervals(
@@ -172,16 +172,16 @@ def boolean_intervals(
     margin_fn: Callable[[float], float],
     root_tol: float,
 ) -> list[Interval]:
-    """Build true-state closed intervals and refine every sampled transition."""
+    """构建真值状态闭区间，并对每个采样过渡点进行精细求解。"""
 
     time_array = np.asarray(times, dtype=np.float64)
     state_array = np.asarray(states, dtype=np.bool_)
     if time_array.ndim != 1 or state_array.ndim != 1 or len(time_array) != len(state_array):
-        raise ValueError("times and states must be one-dimensional arrays of equal length")
+        raise ValueError("times 和 states 必须为等长一维数组")
     if len(time_array) == 0:
         return []
     if not np.all(np.isfinite(time_array)) or np.any(time_array < 0.0) or np.any(np.diff(time_array) <= 0.0):
-        raise ValueError("times must be finite, non-negative, and strictly increasing")
+        raise ValueError("times 必须为有限、非负且严格递增")
     intervals: list[Interval] = []
     start = float(time_array[0]) if state_array[0] else None
     for index in range(len(time_array) - 1):
@@ -229,10 +229,10 @@ def _as_finite_float(value: Any) -> float | None:
 
 
 def check_uav_plan(plan: UAVPlan, data: ProblemData) -> FeasibilityReport:
-    """Return structured physical and ordering violations for one UAV route."""
+    """返回单条 UAV 航线上结构化的物理约束和排序约束违规信息。"""
 
     if not isinstance(data, ProblemData):
-        raise TypeError("data must be a ProblemData instance")
+        raise TypeError("data 必须为 ProblemData 实例")
     if not isinstance(plan, UAVPlan):
         return FeasibilityReport(False, {"invalid_uav_plan": 1.0})
     violations: dict[str, float] = {}
@@ -325,24 +325,24 @@ def check_uav_plan(plan: UAVPlan, data: ProblemData) -> FeasibilityReport:
 
 def _question_number(question_id: int | str) -> int:
     if isinstance(question_id, bool):
-        raise ValueError("question_id must be one of Q1 through Q5")
+        raise ValueError("question_id 必须为 Q1 至 Q5 之一")
     text = str(question_id).strip().lower()
     if text.startswith("question"):
         text = text[8:]
     elif text.startswith("q"):
         text = text[1:]
     if not text.isdigit() or int(text) not in range(1, 6):
-        raise ValueError("question_id must be one of Q1 through Q5")
+        raise ValueError("question_id 必须为 Q1 至 Q5 之一")
     return int(text)
 
 
 def check_solution(plans: Iterable[UAVPlan], question_id: int | str, data: ProblemData) -> FeasibilityReport:
-    """Combine route violations with the bomb-count rules for one question."""
+    """将航线违规与某个问题的炸弹数量规则进行合并。"""
 
     try:
         route_list = list(plans)
     except TypeError as exc:
-        raise TypeError("plans must be iterable") from exc
+        raise TypeError("plans 必须为可迭代对象") from exc
     question = _question_number(question_id)
     violations: dict[str, float] = {}
     counts = np.zeros(len(data.uav_init), dtype=np.int64)
@@ -373,18 +373,18 @@ def check_solution(plans: Iterable[UAVPlan], question_id: int | str, data: Probl
 
 
 def decode_ordered_release_times(raw: Sequence[float], horizon: float, min_gap: float) -> FloatArray:
-    """Project raw release-time values deterministically into the feasible order cone."""
+    """将原始投放时间值确定性投影到可行的排序锥中。"""
 
     values = np.asarray(raw, dtype=np.float64)
     if values.ndim != 1 or not np.all(np.isfinite(values)):
-        raise ValueError("raw release times must be a finite one-dimensional array")
+        raise ValueError("原始投放时间必须为有限一维数组")
     end = _finite_nonnegative(horizon, "horizon")
     gap = _finite_nonnegative(min_gap, "min_gap")
     count = len(values)
     if count == 0:
         return np.empty(0, dtype=np.float64)
     if (count - 1) * gap > end + 1e-12:
-        raise ValueError("horizon cannot accommodate the requested release gap")
+        raise ValueError("时间窗口无法满足所需的投放间隔")
     projected = np.sort(np.clip(values, 0.0, end))
     lower = np.arange(count, dtype=np.float64) * gap
     upper = end - np.arange(count - 1, -1, -1, dtype=np.float64) * gap
@@ -398,9 +398,9 @@ def decode_ordered_release_times(raw: Sequence[float], horizon: float, min_gap: 
 def _strong_readonly_float64(values: Any, shape: tuple[int, ...] | None = None) -> FloatArray:
     source = np.asarray(values, dtype=np.float64)
     if shape is not None and source.shape != shape:
-        raise ValueError(f"array must have shape {shape}")
+        raise ValueError(f"数组形状必须为 {shape}")
     if not np.all(np.isfinite(source)):
-        raise ValueError("array must contain only finite values")
+        raise ValueError("数组必须只包含有限值")
     return np.frombuffer(source.tobytes(order="C"), dtype=np.float64).reshape(source.shape)
 
 
@@ -416,7 +416,7 @@ def _freeze(value: Any) -> Any:
 
 @dataclass(frozen=True, slots=True)
 class EvaluationResult:
-    """Immutable objective values and numerical diagnostics for one solution."""
+    """单个解的不可变目标值和数值诊断信息。"""
 
     feasible: bool
     violations: Mapping[str, float]
@@ -458,10 +458,10 @@ class EvaluationResult:
 
 def _positive_profile_number(profile: Mapping[str, Any], name: str) -> float:
     if not isinstance(profile, Mapping):
-        raise TypeError("profile must be a mapping")
+        raise TypeError("评估配置必须为映射类型")
     value = _as_finite_float(profile.get(name))
     if value is None or value <= 0.0:
-        raise ValueError(f"{name} must be a finite positive number")
+        raise ValueError(f"{name} 必须为有限正数")
     return value
 
 
@@ -469,18 +469,18 @@ def _missile_selection(indices: Iterable[int], data: ProblemData) -> tuple[int, 
     try:
         selected = tuple(indices)
     except TypeError as exc:
-        raise TypeError("missile_indices must be iterable") from exc
+        raise TypeError("missile_indices 必须为可迭代对象") from exc
     if not selected:
-        raise ValueError("missile_indices must not be empty")
+        raise ValueError("missile_indices 不能为空")
     normalized: list[int] = []
     for value in selected:
         if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)):
-            raise TypeError("missile index must be an integer")
+            raise TypeError("导弹索引必须为整数")
         index = int(value)
         if index < 0 or index >= len(data.missile_init) or index >= 3:
-            raise IndexError(f"missile index {index} is out of range")
+            raise IndexError(f"导弹索引 {index} 超出范围")
         if index in normalized:
-            raise ValueError("missile_indices must not contain duplicates")
+            raise ValueError("missile_indices 不能包含重复项")
         normalized.append(index)
     return tuple(normalized)
 
@@ -544,14 +544,14 @@ def evaluate_solution(
     numerical: Mapping[str, Any],
     question_id: int | str = 5,
 ) -> EvaluationResult:
-    """Evaluate union-of-cloud coverage intervals for selected missiles.
+    """评估选定导弹的烟雾云并集覆盖区间。
 
-    Infeasible plans return a zero-objective result carrying structured
-    violations so optimization loops can score them without exception paths.
+    不可行的方案返回零目标值结果，并携带结构化的违规信息，
+    以便优化循环可以在无需异常处理路径的情况下对其进行评分。
     """
 
     if not isinstance(data, ProblemData):
-        raise TypeError("data must be a ProblemData instance")
+        raise TypeError("data 必须为 ProblemData 实例")
     selected = _missile_selection(missile_indices, data)
     time_step = _positive_profile_number(sampling_profile, "time_step")
     root_tolerance = _positive_profile_number(
@@ -564,7 +564,7 @@ def evaluate_solution(
     )
     raw_depth = numerical.get("max_refinement_depth", 8)
     if isinstance(raw_depth, (bool, np.bool_)) or not isinstance(raw_depth, (int, np.integer)) or int(raw_depth) < 0:
-        raise ValueError("max_refinement_depth must be a non-negative integer")
+        raise ValueError("max_refinement_depth 必须为非负整数")
     max_depth = int(raw_depth)
     route_list = list(plans)
     feasibility = check_solution(route_list, question_id, data)

@@ -1,4 +1,4 @@
-"""Evaluation and per-bomb contribution accounting for Question 3."""
+"""问题三的评估函数与单弹贡献核算。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def _duration(plan: UAVPlan, bombs: tuple, data: ProblemData, config: Mapping[st
     subset = UAVPlan(plan.uav_index, plan.heading_rad, plan.speed, bombs)
     result = evaluate_solution([subset], [0], data, config["sampling"][profile], config["numerical"], question_id=5)
     if not result.feasible:
-        raise ValueError(f"partial Q3 plan is infeasible: {dict(result.violations)}")
+        raise ValueError(f"Q3 部分方案不可行: {dict(result.violations)}")
     return float(result.duration_by_missile[0])
 
 
@@ -29,14 +29,14 @@ def _nonnegative(value: float, label: str, tolerance: float = 1e-8) -> float:
         return float(value)
     if value >= -tolerance:
         return 0.0
-    raise ValueError(f"{label} is unexpectedly negative: {value}")
+    raise ValueError(f"{label} 意外为负数: {value}")
 
 
 def bomb_contributions(plan: UAVPlan, data: ProblemData, config: Mapping[str, Any], profile: str = "verify") -> dict[str, Any]:
-    """Compute standalone, release-ordered sequential, and removal marginals."""
+    """计算单独覆盖时长、按释放顺序的序贯边际贡献以及去除边际贡献。"""
 
     if len(plan.bombs) != 3:
-        raise ValueError("Q3 contribution analysis requires exactly three bombs")
+        raise ValueError("Q3 贡献分析需要恰好三枚炸弹")
     bombs = tuple(plan.bombs)
     total = _duration(plan, bombs, data, config, profile)
     standalone = {bomb.bomb_index: _duration(plan, (bomb,), data, config, profile) for bomb in bombs}

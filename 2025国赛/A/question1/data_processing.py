@@ -1,4 +1,4 @@
-"""Configuration, fixed problem data, and reproducible output helpers."""
+"""配置加载、固定问题数据和可复现输出辅助工具。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ FloatArray = NDArray[np.float64]
 
 @dataclass(frozen=True, slots=True)
 class ProblemData:
-    """Immutable container for the physical constants supplied by the problem."""
+    """题目所提供物理常量的不可变容器。"""
 
     missile_init: FloatArray
     uav_init: FloatArray
@@ -53,50 +53,50 @@ _REQUIRED_TOP_LEVEL = {
 
 
 def load_config(path: str | Path) -> dict[str, Any]:
-    """Read and validate a solver configuration from a UTF-8 JSON file."""
+    """读取并验证来自 UTF-8 JSON 文件的求解器配置。"""
 
     config_path = Path(path)
     try:
         with config_path.open("r", encoding="utf-8") as handle:
             config = json.load(handle)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"invalid JSON configuration {config_path}: {exc.msg}") from exc
+        raise ValueError(f"无效的 JSON 配置 {config_path}: {exc.msg}") from exc
 
     if not isinstance(config, dict):
-        raise ValueError("configuration top level must be a JSON object")
+        raise ValueError("配置顶层必须为 JSON 对象")
 
     missing = sorted(_REQUIRED_TOP_LEVEL.difference(config))
     if missing:
-        raise ValueError(f"configuration is missing required keys: {', '.join(missing)}")
+        raise ValueError(f"配置缺少必需键: {', '.join(missing)}")
 
     if not isinstance(config["profile"], str) or not config["profile"].strip():
-        raise ValueError("profile must be a non-empty string")
+        raise ValueError("profile 必须为非空字符串")
     if type(config["master_seed"]) is not int or config["master_seed"] != 2025:
-        raise ValueError("master_seed must be the integer 2025")
+        raise ValueError("master_seed 必须为整数 2025")
 
     for section_name in ("physics", "sampling", "numerical", "optimization", "output"):
         if not isinstance(config[section_name], dict):
-            raise ValueError(f"{section_name} must be a JSON object")
+            raise ValueError(f"{section_name} 必须为 JSON 对象")
 
     gravity = config["physics"].get("gravity")
     if type(gravity) not in (int, float) or gravity != 9.8:
-        raise ValueError("physics.gravity must be exactly 9.8")
+        raise ValueError("physics.gravity 必须恰好为 9.8")
 
     for sampling_name in ("fast", "verify"):
         if sampling_name not in config["sampling"]:
-            raise ValueError(f"configuration is missing sampling.{sampling_name}")
+            raise ValueError(f"配置缺少 sampling.{sampling_name}")
         if not isinstance(config["sampling"][sampling_name], dict):
-            raise ValueError(f"sampling.{sampling_name} must be a JSON object")
+            raise ValueError(f"sampling.{sampling_name} 必须为 JSON 对象")
 
     optimization = config["optimization"]
     budgets = optimization.get("budgets")
     if not isinstance(budgets, dict):
-        raise ValueError("optimization.budgets must be a JSON object")
+        raise ValueError("optimization.budgets 必须为 JSON 对象")
     for question in ("q2", "q3", "q4", "q5"):
         budget_path = f"optimization.budgets.{question}"
         budget = budgets.get(question)
         if not isinstance(budget, dict):
-            raise ValueError(f"{budget_path} must be a JSON object")
+            raise ValueError(f"{budget_path} 必须为 JSON 对象")
         _validate_positive_config_integer(
             f"{budget_path}.max_evaluations", budget.get("max_evaluations")
         )
@@ -109,11 +109,11 @@ def load_config(path: str | Path) -> dict[str, Any]:
 
 def _validate_positive_config_integer(name: str, value: Any) -> None:
     if type(value) is not int or value <= 0:
-        raise ValueError(f"{name} must be a positive integer")
+        raise ValueError(f"{name} 必须为正整数")
 
 
 def _readonly_float64(values: Any) -> FloatArray:
-    """Create a float64 array that cannot be mutated through this data object."""
+    """创建一个 float64 数组，确保无法通过此数据对象对其进行修改。"""
 
     source = np.asarray(values, dtype=np.float64)
     immutable_buffer = source.tobytes(order="C")
@@ -121,13 +121,13 @@ def _readonly_float64(values: Any) -> FloatArray:
 
 
 def load_problem_data(config: Mapping[str, Any]) -> ProblemData:
-    """Build the fixed numerical data supplied in the competition statement."""
+    """根据赛题说明构建固定的数值数据。"""
 
     if not isinstance(config, Mapping):
-        raise TypeError("config must be a mapping")
+        raise TypeError("config 必须为映射类型")
     physics = config.get("physics")
     if not isinstance(physics, Mapping) or "gravity" not in physics:
-        raise ValueError("config must contain physics.gravity")
+        raise ValueError("config 必须包含 physics.gravity")
 
     data = ProblemData(
         missile_init=_readonly_float64(
@@ -163,33 +163,33 @@ def load_problem_data(config: Mapping[str, Any]) -> ProblemData:
 
 def _validate_array(name: str, value: Any, shape: tuple[int, ...]) -> None:
     if not isinstance(value, np.ndarray):
-        raise ValueError(f"{name} must be a NumPy array")
+        raise ValueError(f"{name} 必须为 NumPy 数组")
     if value.shape != shape:
-        raise ValueError(f"{name} must have shape {shape}, got {value.shape}")
+        raise ValueError(f"{name} 形状必须为 {shape}，实际为 {value.shape}")
     if value.dtype != np.float64:
-        raise ValueError(f"{name} must use float64 values")
+        raise ValueError(f"{name} 必须使用 float64 类型")
     if value.flags.writeable:
-        raise ValueError(f"{name} must be read-only")
+        raise ValueError(f"{name} 必须为只读")
     if not np.all(np.isfinite(value)):
-        raise ValueError(f"{name} must contain only finite values")
+        raise ValueError(f"{name} 必须只包含有限值")
 
 
 def _validate_positive(name: str, value: Any) -> None:
     if isinstance(value, (bool, np.bool_)) or not np.isscalar(value):
-        raise ValueError(f"{name} must be a finite positive number")
+        raise ValueError(f"{name} 必须为有限正数")
     try:
         numeric = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(f"{name} must be a finite positive number") from exc
+        raise ValueError(f"{name} 必须为有限正数") from exc
     if not np.isfinite(numeric) or numeric <= 0.0:
-        raise ValueError(f"{name} must be a finite positive number")
+        raise ValueError(f"{name} 必须为有限正数")
 
 
 def validate_problem_data(data: ProblemData) -> None:
-    """Reject malformed or physically invalid problem data."""
+    """拒绝格式错误或物理上无效的问题数据。"""
 
     if not isinstance(data, ProblemData):
-        raise TypeError("data must be a ProblemData instance")
+        raise TypeError("data 必须为 ProblemData 实例")
 
     _validate_array("missile_init", data.missile_init, (3, 3))
     _validate_array("uav_init", data.uav_init, (5, 3))
@@ -199,11 +199,11 @@ def validate_problem_data(data: ProblemData) -> None:
     try:
         lower, upper = data.uav_speed_bounds
     except (TypeError, ValueError) as exc:
-        raise ValueError("uav_speed_bounds must contain two finite speeds") from exc
+        raise ValueError("uav_speed_bounds 必须包含两个有限速度值") from exc
     _validate_positive("uav_speed_bounds lower", lower)
     _validate_positive("uav_speed_bounds upper", upper)
     if float(lower) >= float(upper):
-        raise ValueError("uav_speed_bounds lower limit must be less than upper limit")
+        raise ValueError("uav_speed_bounds 下限必须小于上限")
 
     for name in (
         "target_radius",
@@ -216,30 +216,29 @@ def validate_problem_data(data: ProblemData) -> None:
     ):
         _validate_positive(name, getattr(data, name))
     if float(data.gravity) != 9.8:
-        raise ValueError("gravity must be exactly 9.8")
+        raise ValueError("gravity 必须恰好为 9.8")
 
 
 def sample_cylinder_surface(
     profile: Mapping[str, Any], data: ProblemData
 ) -> FloatArray:
-    """Deterministically sample the cylinder side, top, and contour edges.
+    """确定性地在圆柱体的侧面、顶面和轮廓边缘上进行采样。
 
-    The requested point budget controls approximately uniform axial and polar
-    spacings.  Boundary rings are deliberately included; duplicate edge points
-    are removed before returning a strongly read-only ``float64`` array.
+    请求的点数预算控制近似均匀的轴向和极向间距。
+    故意包含边界环；在返回一个强只读 ``float64`` 数组之前，会移除重复的边缘点。
     """
 
     if not isinstance(profile, Mapping):
-        raise TypeError("sampling profile must be a mapping")
+        raise TypeError("采样配置必须为映射类型")
     target_count = profile.get("target_surface_points")
     if (
         isinstance(target_count, (bool, np.bool_))
         or not isinstance(target_count, (int, np.integer))
         or int(target_count) <= 0
     ):
-        raise ValueError("target_surface_points must be a positive integer")
+        raise ValueError("target_surface_points 必须为正整数")
     if not isinstance(data, ProblemData):
-        raise TypeError("data must be a ProblemData instance")
+        raise TypeError("data 必须为 ProblemData 实例")
     validate_problem_data(data)
 
     budget = int(target_count)
@@ -289,9 +288,9 @@ def sample_cylinder_surface(
     sampled = np.asarray(points, dtype=np.float64)
     sampled = np.unique(sampled, axis=0)
     if sampled.ndim != 2 or sampled.shape[1] != 3 or len(sampled) == 0:
-        raise RuntimeError("cylinder surface sampling produced no points")
+        raise RuntimeError("圆柱表面采样未生成任何点")
     if not np.all(np.isfinite(sampled)):
-        raise RuntimeError("cylinder surface sampling produced non-finite points")
+        raise RuntimeError("圆柱表面采样生成了非有限值点")
     return _readonly_float64(sampled)
 
 
@@ -299,33 +298,32 @@ def _validate_view_geometry(
     missile_pos: Any, surface_points: Any, data: ProblemData
 ) -> tuple[FloatArray, FloatArray]:
     if not isinstance(data, ProblemData):
-        raise TypeError("data must be a ProblemData instance")
+        raise TypeError("data 必须为 ProblemData 实例")
     validate_problem_data(data)
 
     missile = np.asarray(missile_pos, dtype=np.float64)
     if missile.shape != (3,):
-        raise ValueError("missile_pos must have shape (3,)")
+        raise ValueError("missile_pos 形状必须为 (3,)")
     if not np.all(np.isfinite(missile)):
-        raise ValueError("missile_pos must contain only finite values")
+        raise ValueError("missile_pos 必须只包含有限值")
 
     points = np.asarray(surface_points, dtype=np.float64)
     if points.ndim != 2 or points.shape[1:] != (3,):
-        raise ValueError("surface_points must have shape (N, 3)")
+        raise ValueError("surface_points 形状必须为 (N, 3)")
     if len(points) == 0:
-        raise ValueError("surface_points must not be empty")
+        raise ValueError("surface_points 不能为空")
     if not np.all(np.isfinite(points)):
-        raise ValueError("surface_points must contain only finite values")
+        raise ValueError("surface_points 必须只包含有限值")
     return missile, points
 
 
 def visible_mask(
     missile_pos: Any, surface_points: Any, data: ProblemData
 ) -> NDArray[np.bool_]:
-    """Return the sampled cylinder points visible from ``missile_pos``.
+    """返回从 ``missile_pos`` 处可见的采样圆柱体表面点。
 
-    For a convex body, a boundary point is visible exactly when at least one
-    outward supporting normal faces the viewer.  At the top/side/bottom edges
-    the union of the adjacent face tests makes tangent contour points visible.
+    对于凸体，当至少一个向外的支撑法线朝向观察者时，边界点即为可见。
+    在顶面/侧面/底面边缘处，相邻面测试的并集使切线轮廓点可见。
     """
 
     missile, points = _validate_view_geometry(missile_pos, surface_points, data)
@@ -346,7 +344,7 @@ def visible_mask(
     on_top = within_disk & (np.abs(points[:, 2] - height) <= surface_tolerance)
     on_bottom = within_disk & (np.abs(points[:, 2]) <= surface_tolerance)
     if not np.all(on_side | on_top | on_bottom):
-        raise ValueError("surface_points must lie on the cylinder surface")
+        raise ValueError("surface_points 必须位于圆柱表面上")
 
     side_dot = np.einsum("ij,ij->i", radial, missile[:2] - points[:, :2])
     viewer_distance = np.linalg.norm(missile[:2] - points[:, :2], axis=1)
@@ -356,33 +354,33 @@ def visible_mask(
     bottom_visible = on_bottom & (missile[2] <= surface_tolerance)
     mask = np.asarray(side_visible | top_visible | bottom_visible, dtype=np.bool_)
     if not np.any(mask):
-        raise ValueError("no target surface points are visible from missile_pos")
+        raise ValueError("从 missile_pos 看不到任何目标表面点")
     return mask
 
 
 def visible_target_points(
     missile_pos: Any, surface_points: Any, data: ProblemData
 ) -> FloatArray:
-    """Return a copy of the target points visible from ``missile_pos``."""
+    """返回从 ``missile_pos`` 处可见的目标点的副本。"""
 
     points = np.asarray(surface_points, dtype=np.float64)
     mask = visible_mask(missile_pos, points, data)
     visible = np.array(points[mask], dtype=np.float64, copy=True)
     if len(visible) == 0:
-        raise ValueError("no target surface points are visible from missile_pos")
+        raise ValueError("从 missile_pos 看不到任何目标表面点")
     return visible
 
 
 def _normalise_question_id(question_id: int | str) -> str:
     if isinstance(question_id, bool):
-        raise ValueError("question_id must identify a positive question number")
+        raise ValueError("question_id 必须标识为有效题号")
     text = str(question_id).strip().lower()
     if text.startswith("question"):
         text = text[len("question") :]
     elif text.startswith("q"):
         text = text[1:]
     if not text.isdigit() or int(text) <= 0:
-        raise ValueError("question_id must identify a positive question number")
+        raise ValueError("question_id 必须标识为有效题号")
     return str(int(text))
 
 
@@ -391,13 +389,13 @@ def create_run_directory(
     output_root: str | Path,
     run_id: str | None = None,
 ) -> Path:
-    """Create a fresh ``questionN/run_id`` directory without overwriting data."""
+    """创建一个新的 ``questionN/run_id`` 目录，不会覆盖已有数据。"""
 
     question_number = _normalise_question_id(question_id)
     if run_id is None:
         run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     if not isinstance(run_id, str) or not run_id or Path(run_id).name != run_id:
-        raise ValueError("run_id must be a non-empty single path component")
+        raise ValueError("run_id 必须为非空单路径组件")
 
     run_directory = Path(output_root) / f"question{question_number}" / run_id
     run_directory.mkdir(parents=True, exist_ok=False)
@@ -409,11 +407,11 @@ def _numpy_json_default(value: Any) -> Any:
         return value.tolist()
     if isinstance(value, np.generic):
         return value.item()
-    raise TypeError(f"object of type {type(value).__name__} is not JSON serializable")
+    raise TypeError(f"类型 {type(value).__name__} 的对象不可 JSON 序列化")
 
 
 def save_json(path: str | Path, payload: Any) -> None:
-    """Write JSON in a stable, readable form, including NumPy values."""
+    """以稳定、可读的形式写入 JSON，支持 NumPy 值。"""
 
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -431,12 +429,12 @@ def save_json(path: str | Path, payload: Any) -> None:
             handle.write("\n")
     except ValueError as exc:
         if "Out of range float values" in str(exc):
-            raise ValueError("payload contains a non-finite JSON number") from exc
+            raise ValueError("payload 包含非有限 JSON 数值") from exc
         raise
 
 
 def sha256_file(path: str | Path) -> str:
-    """Return a SHA-256 digest while reading the file in bounded chunks."""
+    """以分块读取方式返回文件的 SHA-256 摘要值。"""
 
     digest = hashlib.sha256()
     with Path(path).open("rb") as handle:

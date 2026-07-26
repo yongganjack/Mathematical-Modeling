@@ -1,4 +1,4 @@
-"""English-language diagnostic plots for Question 3."""
+"""问题三的诊断性图表。"""
 
 from __future__ import annotations
 
@@ -6,6 +6,10 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import matplotlib
+
+matplotlib.rcParams["font.sans-serif"] = ["SimHei"]
+matplotlib.rcParams["axes.unicode_minus"] = False
 import numpy as np
 
 from question1.data_processing import ProblemData
@@ -27,13 +31,13 @@ def plot_trajectory(data: ProblemData, plan: UAVPlan, derived: Sequence[DerivedB
     times = np.linspace(0.0, end_time, 150)
     origin = np.asarray(data.uav_init[plan.uav_index])
     path = origin[None, :] + plan.speed * times[:, None] * direction[None, :]
-    ax.plot(path[:, 0], path[:, 1], color="navy", label="FY1 flight path")
+    ax.plot(path[:, 0], path[:, 1], color="navy", label="FY1 飞行路径")
     colors = ("tab:red", "tab:green", "tab:orange")
     for item, color in zip(derived, colors):
         ax.scatter(*item.release_point[:2], marker="v", color=color, label=f"Bomb {item.bomb_index} release")
         ax.scatter(*item.explosion_point[:2], marker="*", s=100, color=color, label=f"Bomb {item.bomb_index} explosion")
-    ax.scatter(0.0, 200.0, marker="s", color="black", label="Target")
-    ax.set(title="Question 3: FY1 Three-Bomb Trajectory", xlabel="x (m)", ylabel="y (m)")
+    ax.scatter(0.0, 200.0, marker="s", color="black", label="目标")
+    ax.set(title="问题三：FY1 三炸弹轨迹", xlabel="x (m)", ylabel="y (m)")
     ax.axis("equal"); ax.grid(alpha=.25); ax.legend(fontsize=8, ncol=2)
     paths = _save(fig, output_dir, "trajectory"); plt.close(fig); return paths
 
@@ -43,7 +47,7 @@ def plot_intervals(intervals: Mapping[int, Sequence[Sequence[float]]], output_di
     fig, ax = plt.subplots(figsize=(8, 2.8))
     for start, end in intervals.get(0, ()):
         ax.broken_barh([(start, end - start)], (0.6, 0.8), facecolors="tab:blue")
-    ax.set(title="M1 Joint Coverage Intervals", xlabel="Time (s)", yticks=[1.0], yticklabels=["M1"]); ax.grid(axis="x", alpha=.25)
+    ax.set(title="M1 联合遮挡区间", xlabel="时间 (s)", yticks=[1.0], yticklabels=["M1"]); ax.grid(axis="x", alpha=.25)
     paths = _save(fig, output_dir, "intervals"); plt.close(fig); return paths
 
 
@@ -54,7 +58,7 @@ def plot_contributions(contributions: Mapping[str, Any], output_dir: str | Path)
     fig, ax = plt.subplots(figsize=(8, 4.5))
     for offset, key, label in [(-width, "standalone", "Standalone"), (0, "sequential_marginal", "Sequential marginal"), (width, "removal_marginal", "Removal marginal")]:
         ax.bar(x + offset, [contributions[key][index] for index in (1, 2, 3)], width, label=label)
-    ax.set(title="Bomb Coverage Contributions", ylabel="Duration (s)", xticks=x, xticklabels=labels); ax.legend(); ax.grid(axis="y", alpha=.25)
+    ax.set(title="炸弹遮挡贡献", ylabel="时长 (s)", xticks=x, xticklabels=labels); ax.legend(); ax.grid(axis="y", alpha=.25)
     paths = _save(fig, output_dir, "coverage_contributions"); plt.close(fig); return paths
 
 
@@ -64,5 +68,5 @@ def plot_optimizer_history(history: Sequence[Mapping[str, Any]], output_dir: str
     for source in ("pso", "de"):
         rows = [row for row in history if row.get("source") == source]
         if rows: ax.plot([row["evaluations"] for row in rows], [row["best"] for row in rows], marker="o", label=source.upper())
-    ax.set(title="Optimizer History (Fast Profile)", xlabel="Objective evaluations", ylabel="Best joint duration (s)"); ax.grid(alpha=.25); ax.legend()
+    ax.set(title="优化器历史 (快速方案)", xlabel="目标函数评估次数", ylabel="最佳联合时长 (s)"); ax.grid(alpha=.25); ax.legend()
     paths = _save(fig, output_dir, "optimizer_history"); plt.close(fig); return paths

@@ -1,4 +1,4 @@
-"""English-language figures for the fixed Question 1 strategy."""
+"""问题一的固定策略可视化图表（英文标注）。"""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ from typing import Any
 
 import matplotlib
 
+matplotlib.rcParams["font.sans-serif"] = ["SimHei"]
+matplotlib.rcParams["axes.unicode_minus"] = False
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -47,7 +49,7 @@ def plot_trajectory(
     derived_bomb: DerivedBomb,
     output_dir: str | Path,
 ) -> dict[str, Path]:
-    """Plot missile, UAV, release, explosion, and smoke-center trajectories."""
+    """绘制导弹、UAV、投放点、爆炸点和烟雾中心轨迹图。"""
 
     paths = _figure_paths(output_dir, "trajectory")
     missile_times = np.linspace(0.0, missile_hit_time(0, data), 180)
@@ -78,16 +80,16 @@ def plot_trajectory(
 
     figure = plt.figure(figsize=(9, 6))
     axis = figure.add_subplot(111, projection="3d")
-    axis.plot(*missile_xyz.T, label="Missile trajectory", color="tab:red")
-    axis.plot(*uav_xyz.T, label="UAV straight-line path", color="tab:blue")
-    axis.scatter(*derived_bomb.release_point, label="Release point", marker="o", s=55)
-    axis.scatter(*derived_bomb.explosion_point, label="Explosion point", marker="*", s=90)
+    axis.plot(*missile_xyz.T, label="导弹轨迹", color="tab:red")
+    axis.plot(*uav_xyz.T, label="无人机直线航迹", color="tab:blue")
+    axis.scatter(*derived_bomb.release_point, label="投放点", marker="o", s=55)
+    axis.scatter(*derived_bomb.explosion_point, label="爆炸点", marker="*", s=90)
     if len(smoke_xyz):
-        axis.plot(*smoke_xyz.T, label="Smoke-cloud center", color="tab:gray")
-    axis.set_title("Question 1 Trajectories and Smoke-Cloud Motion")
-    axis.set_xlabel("X coordinate (m)")
-    axis.set_ylabel("Y coordinate (m)")
-    axis.set_zlabel("Altitude (m)")
+        axis.plot(*smoke_xyz.T, label="烟云中心", color="tab:gray")
+    axis.set_title("问题一：轨迹与烟云运动")
+    axis.set_xlabel("X 坐标 (m)")
+    axis.set_ylabel("Y 坐标 (m)")
+    axis.set_zlabel("高度 (m)")
     axis.legend(loc="best")
     _save_figure(figure, paths)
     return paths
@@ -97,7 +99,7 @@ def plot_intervals(
     intervals_by_missile: Mapping[int, Sequence[Sequence[float]]],
     output_dir: str | Path,
 ) -> dict[str, Path]:
-    """Plot effective smoke-screen intervals as an English timeline."""
+    """以英文时间轴形式绘制有效烟幕区间。"""
 
     paths = _figure_paths(output_dir, "intervals")
     rows: list[tuple[int, int, float, float, float]] = []
@@ -119,9 +121,9 @@ def plot_intervals(
             height=0.45,
             color="tab:blue",
         )
-    axis.set_title("Effective Smoke-Screen Intervals")
-    axis.set_xlabel("Time after launch (s)")
-    axis.set_ylabel("Threat missile")
+    axis.set_title("有效烟幕遮挡区间")
+    axis.set_xlabel("发射后时间 (s)")
+    axis.set_ylabel("威胁导弹")
     axis.grid(axis="x", alpha=0.3)
     _save_figure(figure, paths)
     return paths
@@ -131,7 +133,7 @@ def plot_convergence(
     convergence_rows: Sequence[Mapping[str, Any]],
     output_dir: str | Path,
 ) -> dict[str, Path]:
-    """Compare fast and verification objective durations."""
+    """比较快速评估和验证评估的目标函数持续时间。"""
 
     paths = _figure_paths(output_dir, "convergence")
     rows = [dict(row) for row in convergence_rows]
@@ -152,9 +154,9 @@ def plot_convergence(
     figure, axis = plt.subplots(figsize=(6.5, 4.2))
     bars = axis.bar(labels, durations, color=["tab:orange", "tab:green"][: len(rows)])
     axis.bar_label(bars, fmt="%.6f")
-    axis.set_title("Fast and Verification Duration Comparison")
-    axis.set_xlabel("Evaluation profile")
-    axis.set_ylabel("Effective duration (s)")
+    axis.set_title("快速评估与验证评估时长对比")
+    axis.set_xlabel("评估方案")
+    axis.set_ylabel("有效时长 (s)")
     axis.grid(axis="y", alpha=0.3)
     _save_figure(figure, paths)
     return paths

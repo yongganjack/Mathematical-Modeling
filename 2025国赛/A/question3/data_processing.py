@@ -1,4 +1,4 @@
-"""Question 3 bounds plus reusable, template-safe Excel export helpers."""
+"""问题三的变量边界以及可复用的、保护模板的 Excel 导出辅助函数。"""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ TEMPLATE_SPECS: dict[str, dict[str, Any]] = {
 
 
 def q3_bounds(data: ProblemData) -> list[tuple[float, float]]:
-    """Bounds for theta, speed, base, two release slacks, and three fuses."""
+    """返回 theta、速度、基准释放时刻、两个释放松弛量以及三个引信延迟的边界。"""
 
     hit = missile_hit_time(0, data)
     gap = float(data.min_release_interval)
@@ -65,7 +65,7 @@ def q3_bounds(data: ProblemData) -> list[tuple[float, float]]:
 
 
 def q3_config(config: Mapping[str, Any] | None) -> dict[str, int]:
-    """Resolve reproducible budgets, with about 80--140 calls per quick optimizer."""
+    """解析可复现的计算预算，快速优化器约 80~140 次调用。"""
 
     cfg = config or {}
     runtime = cfg.get("optimization", {}).get("q3_runtime", {})
@@ -86,16 +86,16 @@ def q3_config(config: Mapping[str, Any] | None) -> dict[str, int]:
 
 
 def inspect_excel_template(path: str | Path, template_name: str | None = None) -> dict[str, Any]:
-    """Read structural values used to protect any official result template."""
+    """读取用于保护官方结果模板的结构性值。"""
 
     source = Path(path)
     name = template_name or source.name
     if name not in TEMPLATE_SPECS:
-        raise ValueError(f"unsupported Excel template: {name}")
+        raise ValueError(f"不支持的 Excel 模板: {name}")
     spec = TEMPLATE_SPECS[name]
     workbook = load_workbook(source, data_only=False)
     if spec["sheet"] not in workbook.sheetnames:
-        raise ValueError(f"template is missing worksheet {spec['sheet']}")
+        raise ValueError(f"模板缺少工作表 {spec['sheet']}")
     sheet = workbook[spec["sheet"]]
     max_column = max(spec["safe_columns"] + tuple(sheet[cell].column for cell in spec["fixed"]))
     header = [sheet.cell(spec["header_row"], col).value for col in range(1, max_column + 1)]
@@ -112,7 +112,7 @@ def inspect_excel_template(path: str | Path, template_name: str | None = None) -
 
 
 def validate_excel_template(path: str | Path, template_name: str | None = None, *, require_official_hash: bool = False) -> dict[str, Any]:
-    """Validate headers, fixed cells, separator row, note, and optionally hash."""
+    """验证表头、固定单元格、分隔行、注释以及可选的哈希值。"""
 
     info = inspect_excel_template(path, template_name)
     name = info["template_name"]
@@ -132,38 +132,38 @@ def validate_excel_template(path: str | Path, template_name: str | None = None, 
 
 
 def copy_excel_template(source: str | Path, destination: str | Path, template_name: str | None = None) -> tuple[Path, str]:
-    """Copy a validated official template without ever overwriting its source."""
+    """复制经过验证的官方模板，且绝不覆盖源文件。"""
 
     source_path = Path(source).resolve()
     destination_path = Path(destination).resolve()
     if source_path == destination_path:
-        raise ValueError("Excel destination must differ from the official template")
+        raise ValueError("Excel 目标路径必须与官方模板不同")
     before = sha256_file(source_path)
     validation = validate_excel_template(source_path, template_name, require_official_hash=True)
     if not validation["valid"]:
-        raise ValueError("invalid official Excel template: " + "; ".join(validation["errors"]))
+        raise ValueError("官方 Excel 模板无效: " + "; ".join(validation["errors"]))
     destination_path.parent.mkdir(parents=True, exist_ok=True)
     if destination_path.exists():
-        raise FileExistsError(f"refusing to overwrite existing export: {destination_path}")
+        raise FileExistsError(f"拒绝覆盖已有导出文件: {destination_path}")
     shutil.copy2(source_path, destination_path)
     if sha256_file(source_path) != before:
-        raise RuntimeError("official Excel template changed while copying")
+        raise RuntimeError("官方 Excel 模板在复制过程中被修改")
     return destination_path, before
 
 
 def write_excel_rows(path: str | Path, template_name: str, rows: Sequence[Mapping[int | str, Any]], *, number_format: str = "0.000") -> None:
-    """Write only the safe cells declared by a template specification."""
+    """仅写入模板规范中声明为可安全修改的单元格。"""
 
     spec = TEMPLATE_SPECS[template_name]
     if len(rows) != len(spec["data_rows"]):
-        raise ValueError("row count does not match template")
+        raise ValueError("行数与模板不匹配")
     workbook = load_workbook(path, data_only=False)
     sheet = workbook[spec["sheet"]]
     for row_number, values in zip(spec["data_rows"], rows):
         for column, value in values.items():
             column_number = column_index_from_string(column) if isinstance(column, str) else int(column)
             if column_number not in spec["safe_columns"]:
-                raise ValueError(f"column {column} is protected in {template_name}")
+                raise ValueError(f"列 {column} 在 {template_name} 中受保护")
             cell = sheet.cell(row_number, column_number)
             if value is not None and (isinstance(value, (np.floating, np.integer)) or isinstance(value, (int, float)) and not isinstance(value, bool)):
                 cell.value = float(value)
@@ -174,7 +174,7 @@ def write_excel_rows(path: str | Path, template_name: str, rows: Sequence[Mappin
 
 
 def read_excel_rows(path: str | Path, template_name: str) -> list[dict[int, Any]]:
-    """Read back safe result cells as plain Python values."""
+    """将安全结果单元格读回为纯 Python 值。"""
 
     spec = TEMPLATE_SPECS[template_name]
     sheet = load_workbook(path, data_only=False)[spec["sheet"]]
@@ -192,12 +192,12 @@ def export_result1(
     destination: str | Path,
     contributions: Sequence[float],
 ) -> tuple[Path, dict[str, Any]]:
-    """Export the Q3 three-bomb solution into a protected copy of result1.xlsx."""
+    """将问题三的三弹方案导出到 result1.xlsx 的受保护副本中。"""
 
     if not isinstance(plan, UAVPlan) or len(plan.bombs) != 3:
-        raise ValueError("result1 export requires one UAV plan containing three bombs")
+        raise ValueError("result1 导出需要一个包含三枚炸弹的 UAV 方案")
     if len(contributions) != 3 or not np.all(np.isfinite(np.asarray(contributions, dtype=float))):
-        raise ValueError("contributions must contain three finite values")
+        raise ValueError("贡献值必须包含三个有限值")
     if derived_bombs is None or len(derived_bombs) != 3 or not all(isinstance(item, DerivedBomb) for item in derived_bombs):
         derived = [derive_bomb(plan, bomb, data) for bomb in plan.bombs]
     else:
@@ -221,7 +221,7 @@ def export_result1(
     )
     source_after = sha256_file(template_path)
     if source_hash != source_after:
-        raise RuntimeError("official result1.xlsx changed during export")
+        raise RuntimeError("官方 result1.xlsx 在导出过程中被修改")
     validation.update({
         "source_hash_before": source_hash, "source_hash_after": source_after,
         "destination": str(output), "numeric_readback_valid": bool(numeric_ok),
@@ -229,5 +229,5 @@ def export_result1(
     })
     validation["valid"] = bool(validation["valid"] and numeric_ok and source_hash == source_after)
     if not validation["valid"]:
-        raise RuntimeError("result1.xlsx export validation failed")
+        raise RuntimeError("result1.xlsx 导出验证失败")
     return output, validation

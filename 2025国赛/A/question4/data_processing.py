@@ -1,4 +1,4 @@
-"""Question 4 bounds and protected ``result2.xlsx`` export."""
+"""问题4边界约束与受保护的 ``result2.xlsx`` 导出。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from question3.data_processing import (
 
 
 def q4_bounds(data: ProblemData) -> list[tuple[float, float]]:
-    """Return FY1/FY2/FY3 blocks of ``(heading, speed, release, fuse)``."""
+    """返回 FY1/FY2/FY3 对应的 ``(航向角, 速度, 投放时间, 引信延时)`` 块。"""
 
     hit = missile_hit_time(0, data)
     bounds: list[tuple[float, float]] = []
@@ -35,7 +35,7 @@ def q4_bounds(data: ProblemData) -> list[tuple[float, float]]:
 
 
 def q4_config(config: Mapping[str, Any] | None) -> dict[str, int]:
-    """Resolve compact quick budgets and scaled competition budgets."""
+    """解析紧凑的快速预算和按比例缩放的竞赛预算。"""
 
     cfg = config or {}
     runtime = cfg.get("optimization", {}).get("q4_runtime", {})
@@ -45,7 +45,7 @@ def q4_config(config: Mapping[str, Any] | None) -> dict[str, int]:
         )}
     requested = int(cfg.get("optimization", {}).get("budgets", {}).get("q4", {}).get("max_evaluations", 6000))
     if str(cfg.get("profile", "quick")).lower() == "quick":
-        # 90 PSO + 72 DE calls before a few seeds and verification evaluations.
+        # 快速模式下：90次PSO + 72次DE评估，另加少量种子和验证评估。
         return {"pso_particles": 10, "pso_iterations": 8, "de_particles": 3, "de_iterations": 1}
     pso_particles = max(16, min(48, requested // 300))
     pso_iterations = max(10, min(60, requested // max(2 * pso_particles, 1) - 1))
@@ -66,14 +66,14 @@ def export_result2(
     destination: str | Path,
     contributions: Sequence[float],
 ) -> tuple[Path, dict[str, Any]]:
-    """Write Q4 rows B:J while protecting fixed identifiers and template notes."""
+    """写入Q4的第B至J行，同时保护固定标识符和模板注释。"""
 
     ordered = sorted(plans, key=lambda plan: plan.uav_index)
     if [plan.uav_index for plan in ordered] != [0, 1, 2] or any(len(plan.bombs) != 1 for plan in ordered):
-        raise ValueError("result2 export requires FY1, FY2, and FY3 with one bomb each")
+        raise ValueError("result2 导出需要 FY1、FY2、FY3 各一枚炸弹")
     contribution_values = np.asarray(contributions, dtype=float)
     if contribution_values.shape != (3,) or not np.all(np.isfinite(contribution_values)):
-        raise ValueError("contributions must contain three finite values")
+        raise ValueError("贡献值必须包含三个有限值")
     if derived_bombs is None or len(derived_bombs) != 3 or not all(isinstance(item, DerivedBomb) for item in derived_bombs):
         derived = [derive_bomb(plan, plan.bombs[0], data) for plan in ordered]
     else:
@@ -103,5 +103,5 @@ def export_result2(
     })
     validation["valid"] = bool(validation["valid"] and numeric_ok and source_hash == source_after)
     if not validation["valid"]:
-        raise RuntimeError("result2.xlsx export validation failed")
+        raise RuntimeError("result2.xlsx 导出验证失败")
     return output, validation
