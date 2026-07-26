@@ -20,6 +20,9 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# True: 启动时在控制台选择配置；False: 使用 PyCharm/命令行中的 --config 参数。
+USE_CONSOLE_CONFIG_SELECTION = True
+
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path: sys.path.insert(0, str(PROJECT_DIR))
 
@@ -36,6 +39,25 @@ def _resolve_input(path: str | Path) -> Path:
     if candidate.is_absolute() or candidate.exists(): return candidate.resolve()
     project_candidate = PROJECT_DIR / candidate
     return (project_candidate if project_candidate.exists() else candidate).resolve()
+
+
+def _select_config_path(config_arg: str) -> str:
+    if not USE_CONSOLE_CONFIG_SELECTION:
+        return config_arg
+    choices = {"1": "configs/quick.json", "2": "configs/competition.json"}
+    while True:
+        print("\n请选择运行配置：")
+        print("1. Quick（快速可复现）")
+        print("2. Competition（竞赛级高预算）")
+        try:
+            choice = input("请输入选项 [1/2]：").strip()
+        except EOFError as exc:
+            raise RuntimeError("无法读取控制台输入；如需使用 PyCharm 参数，请将 USE_CONSOLE_CONFIG_SELECTION 改为 False") from exc
+        if choice in choices:
+            selected = choices[choice]
+            print(f"已选择配置：{selected}")
+            return selected
+        print("输入无效，请输入 1 或 2。")
 def _positive_float(text: str) -> float:
     value = float(text)
     if not np.isfinite(value) or value <= 0.0:
@@ -135,7 +157,9 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     logger.info("question4 main() 启动")
     try:
-        exit_code = run(_parser().parse_args())[0]
+        args = _parser().parse_args()
+        args.config = _select_config_path(args.config)
+        exit_code = run(args)[0]
         logger.info("question4 main() 完成, 退出码=%d", exit_code)
         return exit_code
     except Exception as exc:
