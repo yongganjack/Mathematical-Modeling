@@ -31,6 +31,27 @@ def _run_question1(project_root: Path, output_root: Path, run_id: str):
     )
 
 
+def _run_question2(project_root: Path, output_root: Path, run_id: str):
+    return subprocess.run(
+        [
+            sys.executable,
+            "question2/main.py",
+            "--config",
+            "configs/quick.json",
+            "--output-root",
+            str(output_root),
+            "--run-id",
+            run_id,
+            "--no-plots",
+        ],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+
 def test_question1_quick_run_creates_structured_outputs(
     project_root: Path, tmp_path: Path
 ) -> None:
@@ -140,3 +161,29 @@ def test_question1_english_plotting_api_creates_png_svg_and_csv(
         assert paths["png"].is_file()
         assert paths["svg"].is_file()
         assert paths["csv"].is_file()
+
+
+def test_question2_quick_run_creates_reproducible_structured_outputs(
+    project_root: Path, tmp_path: Path
+) -> None:
+    completed = _run_question2(project_root, tmp_path, "q2-smoke")
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+    run_dir = tmp_path / "question2" / "q2-smoke"
+    expected = {
+        "manifest.json",
+        "raw_solution.json",
+        "intervals.csv",
+        "convergence.csv",
+        "optimization_history.csv",
+        "config.json",
+        "input_snapshot.json",
+    }
+    assert expected.issubset(path.name for path in run_dir.iterdir())
+    raw_solution = json.loads(
+        (run_dir / "raw_solution.json").read_text(encoding="utf-8")
+    )
+    assert math.isfinite(raw_solution["verified_objective"])
+    assert raw_solution["profile_result_type"] == "quick_search_result"
+    assert 40 <= raw_solution["actual_evaluations"]["pso"] <= 100
+    assert 40 <= raw_solution["actual_evaluations"]["de"] <= 100
