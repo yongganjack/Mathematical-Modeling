@@ -82,15 +82,36 @@ def load_config(path: str | Path) -> dict[str, Any]:
         if not isinstance(config["sampling"][sampling_name], dict):
             raise ValueError(f"sampling.{sampling_name} must be a JSON object")
 
+    optimization = config["optimization"]
+    budgets = optimization.get("budgets")
+    if not isinstance(budgets, dict):
+        raise ValueError("optimization.budgets must be a JSON object")
+    for question in ("q2", "q3", "q4", "q5"):
+        budget_path = f"optimization.budgets.{question}"
+        budget = budgets.get(question)
+        if not isinstance(budget, dict):
+            raise ValueError(f"{budget_path} must be a JSON object")
+        _validate_positive_config_integer(
+            f"{budget_path}.max_evaluations", budget.get("max_evaluations")
+        )
+    _validate_positive_config_integer(
+        "optimization.workers", optimization.get("workers")
+    )
+
     return config
+
+
+def _validate_positive_config_integer(name: str, value: Any) -> None:
+    if type(value) is not int or value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
 
 
 def _readonly_float64(values: Any) -> FloatArray:
     """Create a float64 array that cannot be mutated through this data object."""
 
-    array = np.asarray(values, dtype=np.float64)
-    array.setflags(write=False)
-    return array
+    source = np.asarray(values, dtype=np.float64)
+    immutable_buffer = source.tobytes(order="C")
+    return np.frombuffer(immutable_buffer, dtype=np.float64).reshape(source.shape)
 
 
 def load_problem_data(config: Mapping[str, Any]) -> ProblemData:
@@ -141,6 +162,8 @@ def _validate_array(name: str, value: Any, shape: tuple[int, ...]) -> None:
         raise ValueError(f"{name} must have shape {shape}, got {value.shape}")
     if value.dtype != np.float64:
         raise ValueError(f"{name} must use float64 values")
+    if value.flags.writeable:
+        raise ValueError(f"{name} must be read-only")
     if not np.all(np.isfinite(value)):
         raise ValueError(f"{name} must contain only finite values")
 
@@ -234,16 +257,22 @@ def save_json(path: str | Path, payload: Any) -> None:
 
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8", newline="\n") as handle:
-        json.dump(
-            payload,
-            handle,
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-            default=_numpy_json_default,
-        )
-        handle.write("\n")
+    try:
+        with output_path.open("w", encoding="utf-8", newline="\n") as handle:
+            json.dump(
+                payload,
+                handle,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+                allow_nan=False,
+                default=_numpy_json_default,
+            )
+            handle.write("\n")
+    except ValueError as exc:
+        if "Out of range float values" in str(exc):
+            raise ValueError("payload contains a non-finite JSON number") from exc
+        raise
 
 
 def sha256_file(path: str | Path) -> str:

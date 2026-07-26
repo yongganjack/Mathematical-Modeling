@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 from dataclasses import FrozenInstanceError, replace
@@ -25,16 +26,40 @@ def _write_config(path: Path, config: dict[str, Any]) -> Path:
     return path
 
 
-def test_quick_config_loads_fixed_problem_data(quick_config, problem_data) -> None:
+def test_quick_config_loads_all_fixed_problem_data(quick_config, problem_data) -> None:
     assert quick_config["profile"] == "quick"
     assert quick_config["master_seed"] == 2025
     assert problem_data.missile_init.shape == (3, 3)
     assert problem_data.uav_init.shape == (5, 3)
     assert problem_data.missile_init.dtype == np.float64
     assert problem_data.uav_init.dtype == np.float64
-    np.testing.assert_array_equal(problem_data.missile_init[0], [20000.0, 0.0, 2000.0])
-    np.testing.assert_array_equal(problem_data.uav_init[0], [17800.0, 0.0, 1800.0])
+    np.testing.assert_array_equal(
+        problem_data.missile_init,
+        [
+            [20000.0, 0.0, 2000.0],
+            [19000.0, 600.0, 2100.0],
+            [18000.0, -600.0, 1900.0],
+        ],
+    )
+    np.testing.assert_array_equal(
+        problem_data.uav_init,
+        [
+            [17800.0, 0.0, 1800.0],
+            [12000.0, 1400.0, 1400.0],
+            [6000.0, -3000.0, 700.0],
+            [11000.0, 2000.0, 1800.0],
+            [13000.0, -2000.0, 1300.0],
+        ],
+    )
+    assert problem_data.missile_speed == 300.0
+    assert problem_data.uav_speed_bounds == (70.0, 140.0)
     np.testing.assert_array_equal(problem_data.target_center_xy, [0.0, 200.0])
+    assert problem_data.target_radius == 7.0
+    assert problem_data.target_height == 10.0
+    assert problem_data.smoke_radius == 10.0
+    assert problem_data.smoke_sink_speed == 3.0
+    assert problem_data.smoke_lifetime == 20.0
+    assert problem_data.min_release_interval == 1.0
     assert problem_data.gravity == 9.8
 
 
@@ -105,12 +130,101 @@ def test_competition_config_has_higher_q2_to_q5_budgets(
         assert competition_budget["max_evaluations"] > quick_budget["max_evaluations"]
 
 
+@pytest.mark.parametrize("question", ["q2", "q3", "q4", "q5"])
+def test_load_config_requires_every_question_budget(
+    tmp_path: Path, quick_config: dict[str, Any], question: str
+) -> None:
+    del quick_config["optimization"]["budgets"][question]
+    path = _write_config(tmp_path / f"missing-{question}-budget.json", quick_config)
+
+    with pytest.raises(ValueError, match=rf"optimization\.budgets\.{question}"):
+        load_config(path)
+
+
+def test_load_config_requires_budget_object(
+    tmp_path: Path, quick_config: dict[str, Any]
+) -> None:
+    quick_config["optimization"]["budgets"]["q2"] = 100
+    path = _write_config(tmp_path / "invalid-q2-budget.json", quick_config)
+
+    with pytest.raises(ValueError, match=r"optimization\.budgets\.q2"):
+        load_config(path)
+
+
+@pytest.mark.parametrize("missing", ["budgets", "workers"])
+def test_load_config_requires_optimization_budget_fields(
+    tmp_path: Path, quick_config: dict[str, Any], missing: str
+) -> None:
+    del quick_config["optimization"][missing]
+    path = _write_config(tmp_path / f"missing-optimization-{missing}.json", quick_config)
+
+    with pytest.raises(ValueError, match=rf"optimization\.{missing}"):
+        load_config(path)
+
+
+def test_load_config_requires_max_evaluations_in_each_budget(
+    tmp_path: Path, quick_config: dict[str, Any]
+) -> None:
+    del quick_config["optimization"]["budgets"]["q3"]["max_evaluations"]
+    path = _write_config(tmp_path / "missing-max-evaluations.json", quick_config)
+
+    with pytest.raises(
+        ValueError, match=r"optimization\.budgets\.q3\.max_evaluations"
+    ):
+        load_config(path)
+
+
+@pytest.mark.parametrize("invalid", [0, -1, 1.5, "100", True])
+def test_load_config_rejects_invalid_max_evaluations(
+    tmp_path: Path, quick_config: dict[str, Any], invalid: Any
+) -> None:
+    quick_config["optimization"]["budgets"]["q4"]["max_evaluations"] = invalid
+    path = _write_config(
+        tmp_path / f"invalid-max-evaluations-{invalid}.json", quick_config
+    )
+
+    with pytest.raises(
+        ValueError, match=r"optimization\.budgets\.q4\.max_evaluations"
+    ):
+        load_config(path)
+
+
+@pytest.mark.parametrize("invalid", [0, -1, 1.5, "1", True])
+def test_load_config_rejects_invalid_worker_budget(
+    tmp_path: Path, quick_config: dict[str, Any], invalid: Any
+) -> None:
+    quick_config["optimization"]["workers"] = invalid
+    path = _write_config(tmp_path / f"invalid-workers-{invalid}.json", quick_config)
+
+    with pytest.raises(ValueError, match=r"optimization\.workers"):
+        load_config(path)
+
+
 def test_problem_data_is_frozen(problem_data) -> None:
     with pytest.raises(FrozenInstanceError):
         problem_data.gravity = 1.0
 
     assert not problem_data.missile_init.flags.writeable
     assert not problem_data.uav_init.flags.writeable
+
+
+@pytest.mark.parametrize("field", ["missile_init", "uav_init", "target_center_xy"])
+def test_problem_arrays_cannot_be_made_writeable(problem_data, field: str) -> None:
+    array = getattr(problem_data, field)
+
+    with pytest.raises(ValueError):
+        array.setflags(write=True)
+    with pytest.raises(ValueError):
+        array.flat[0] = -1.0
+
+
+def test_validate_problem_data_rejects_replace_with_writeable_array(problem_data) -> None:
+    writeable_missiles = np.array(problem_data.missile_init, copy=True)
+    injected = replace(problem_data, missile_init=writeable_missiles)
+
+    assert writeable_missiles.flags.writeable
+    with pytest.raises(ValueError, match="missile_init.*read-only"):
+        validate_problem_data(injected)
 
 
 @pytest.mark.parametrize(
@@ -201,12 +315,25 @@ def test_save_json_serializes_numpy_values_with_stable_keys(tmp_path: Path) -> N
     assert text.index('"a_integer"') < text.index('"m_float"') < text.index('"z_array"')
 
 
+@pytest.mark.parametrize(
+    "invalid",
+    [np.float64(np.nan), np.float64(np.inf), np.array([1.0, np.nan])],
+)
+def test_save_json_rejects_nonfinite_numpy_values(
+    tmp_path: Path, invalid: Any
+) -> None:
+    with pytest.raises(ValueError, match="non-finite"):
+        save_json(tmp_path / "invalid.json", {"value": invalid})
+
+
 def test_sha256_file_is_repeatable(tmp_path: Path) -> None:
     path = tmp_path / "payload.bin"
-    path.write_bytes(b"smoke-interference\n" * 1000)
+    payload = (b"smoke-interference\n" * 70000) + b"chunk-boundary"
+    assert len(payload) > 1024 * 1024
+    path.write_bytes(payload)
 
     first = sha256_file(path)
     second = sha256_file(path)
 
     assert first == second
-    assert len(first) == 64
+    assert first == hashlib.sha256(payload).hexdigest()
