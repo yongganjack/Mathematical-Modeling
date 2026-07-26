@@ -289,11 +289,6 @@ def smoke_center(
     index = _index(missile_index, len(data.missile_init), "missile")
     time = _finite_float(t, "time")
     explosion_time = float(derived.explosion_time)
-    if time < explosion_time:
-        return None
-    if time == explosion_time:
-        return np.array(derived.explosion_point, dtype=np.float64, copy=True)
-
     lifetime = _finite_float(data.smoke_lifetime, "smoke lifetime")
     if lifetime < 0.0:
         raise ValueError("smoke lifetime must be non-negative")
@@ -313,7 +308,7 @@ def smoke_center(
             float(derived.explosion_point[2]) + radius
         ) / sink_speed
     effective_end = min(lifetime_end, missile_end, ground_end)
-    if time > effective_end:
+    if time < explosion_time or time > effective_end:
         return None
 
     center = np.array(derived.explosion_point, dtype=np.float64, copy=True)

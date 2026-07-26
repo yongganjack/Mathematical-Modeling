@@ -255,6 +255,13 @@ def test_smoke_center_expires_after_missile_hit_inclusively(problem_data) -> Non
     assert smoke_center(hit_time + 2e-9, derived, 0, problem_data) is None
 
 
+def test_smoke_center_is_none_when_explosion_occurs_after_missile_hit(problem_data) -> None:
+    hit_time = missile_hit_time(0, problem_data)
+    derived = _derived_at(hit_time + 1.0, [100.0, 0.0, 1000.0])
+
+    assert smoke_center(derived.explosion_time, derived, 0, problem_data) is None
+
+
 def test_smoke_center_ground_boundary_is_valid_then_expires(problem_data) -> None:
     derived = _derived_at(1.0, [100.0, 0.0, 20.0])
     ground_time = 1.0 + (20.0 + problem_data.smoke_radius) / problem_data.smoke_sink_speed
