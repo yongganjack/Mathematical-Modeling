@@ -218,12 +218,24 @@ def test_problem_arrays_cannot_be_made_writeable(problem_data, field: str) -> No
         array.flat[0] = -1.0
 
 
-def test_problem_data_rejects_writeable_array_during_replace(problem_data) -> None:
+def test_problem_data_re_freezes_writeable_array_during_replace(problem_data) -> None:
     writeable_missiles = np.array(problem_data.missile_init, copy=True)
 
     assert writeable_missiles.flags.writeable
-    with pytest.raises(ValueError, match="missile_init.*read-only"):
-        replace(problem_data, missile_init=writeable_missiles)
+    replaced = replace(problem_data, missile_init=writeable_missiles)
+
+    with pytest.raises(ValueError):
+        replaced.missile_init.setflags(write=True)
+
+
+def test_problem_data_re_freezes_pseudo_readonly_array_on_replace(problem_data) -> None:
+    external = np.array(problem_data.missile_init, copy=True)
+    external.setflags(write=False)
+
+    replaced = replace(problem_data, missile_init=external)
+
+    with pytest.raises(ValueError):
+        replaced.missile_init.setflags(write=True)
 
 
 @pytest.mark.parametrize(
