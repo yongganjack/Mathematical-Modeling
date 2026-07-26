@@ -218,13 +218,12 @@ def test_problem_arrays_cannot_be_made_writeable(problem_data, field: str) -> No
         array.flat[0] = -1.0
 
 
-def test_validate_problem_data_rejects_replace_with_writeable_array(problem_data) -> None:
+def test_problem_data_rejects_writeable_array_during_replace(problem_data) -> None:
     writeable_missiles = np.array(problem_data.missile_init, copy=True)
-    injected = replace(problem_data, missile_init=writeable_missiles)
 
     assert writeable_missiles.flags.writeable
     with pytest.raises(ValueError, match="missile_init.*read-only"):
-        validate_problem_data(injected)
+        replace(problem_data, missile_init=writeable_missiles)
 
 
 @pytest.mark.parametrize(
@@ -270,7 +269,9 @@ def test_validate_problem_data_rejects_nonfinite_coordinates(problem_data) -> No
 def test_validate_problem_data_rejects_wrong_array_shapes(
     problem_data, field: str, shape: tuple[int, ...], message: str
 ) -> None:
-    invalid = replace(problem_data, **{field: np.zeros(shape, dtype=np.float64)})
+    wrong_shape = np.zeros(shape, dtype=np.float64)
+    wrong_shape.setflags(write=False)
+    invalid = replace(problem_data, **{field: wrong_shape})
 
     with pytest.raises(ValueError, match=message):
         validate_problem_data(invalid)

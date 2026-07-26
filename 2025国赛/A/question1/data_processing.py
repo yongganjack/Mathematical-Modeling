@@ -34,6 +34,12 @@ class ProblemData:
     min_release_interval: float
     gravity: float
 
+    def __post_init__(self) -> None:
+        for name in ("missile_init", "uav_init", "target_center_xy"):
+            value = getattr(self, name)
+            if isinstance(value, np.ndarray) and value.flags.writeable:
+                raise ValueError(f"{name} must be read-only")
+
 
 _REQUIRED_TOP_LEVEL = {
     "profile",
