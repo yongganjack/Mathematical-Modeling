@@ -3,19 +3,17 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 
-PYTHON = Path(r"E:\Anaconda\envs\newShuMo\python.exe")
-
-
 def _run_question1(project_root: Path, output_root: Path, run_id: str):
     return subprocess.run(
         [
-            str(PYTHON),
+            sys.executable,
             "question1/main.py",
             "--config",
             "configs/quick.json",
