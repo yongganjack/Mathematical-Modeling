@@ -213,6 +213,12 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
             logger.info("图表生成完成: trajectory, intervals, optimization_history 已保存至 %s", run_dir)
         status = "succeeded" if verified.feasible and math.isfinite(float(verified.duration_by_missile[0])) else "failed"
         manifest.update({"finished_at": _utc_now(), "status": status}); save_json(manifest_path, manifest)
+        print("\n最优投放策略：")
+        print(f"无人机: FY{plan.uav_index + 1}")
+        print(f"飞行方向: 航向角={summary['heading_deg']:.6f} deg, 方向向量={[float(value) for value in direction]}")
+        print(f"飞行速度: {plan.speed:.6f} m/s")
+        print(f"烟幕干扰弹投放点: {[float(value) for value in derived.release_point]} m")
+        print(f"烟幕干扰弹起爆点: {[float(value) for value in derived.explosion_point]} m")
         print(f"验证时长: {float(verified.duration_by_missile[0]):.15g}")
         print(f"实际评估次数: PSO={pso.evaluations}, DE={de.evaluations}")
         print(f"状态: {status}"); print(f"输出目录: {run_dir}")

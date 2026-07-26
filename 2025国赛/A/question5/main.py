@@ -29,7 +29,7 @@ if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
 from question1.data_processing import create_run_directory, load_config, load_problem_data, save_json, sha256_file  # noqa: E402
-from question1.model import derive_bomb  # noqa: E402
+from question1.model import derive_bomb, direction_from_heading  # noqa: E402
 from question5.data_processing import export_result3, q5_config, route_to_dict  # noqa: E402
 from question5.evaluation import coarse_selected_summary, contribution_analysis, evaluate_final_routes, routes_to_plans  # noqa: E402
 from question5.model import build_route_library, refine_selected_routes, solve_integer_routes  # noqa: E402
@@ -246,6 +246,13 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
 
         status = "succeeded" if verify.feasible and np.all(np.isfinite(verify_durations)) and excel_validation["valid"] else "failed"
         manifest.update({"finished_at": _utc_now(), "status": status}); save_json(manifest_path, manifest)
+        print("\n最优投放策略：")
+        for row in bomb_rows:
+            print(f"无人机 FY{row['uav_index'] + 1}，烟幕干扰弹 {row['bomb_index']}：")
+            print(f"  飞行方向: 航向角={row['heading_deg']:.6f} deg, 方向向量={[float(value) for value in direction_from_heading(row['heading_rad'])]}")
+            print(f"  飞行速度: {row['speed']:.6f} m/s")
+            print(f"  烟幕干扰弹投放点: {[float(value) for value in row['release_point']]} m")
+            print(f"  烟幕干扰弹起爆点: {[float(value) for value in row['explosion_point']]} m")
         elapsed = time.perf_counter() - wall_start
         print(f"路径数量: {route_counts}")
         print(f"整数PSO评估次数: {result.evaluations}")
