@@ -328,3 +328,81 @@ def max_fuse_delay(uav_index: int, data: ProblemData) -> float:
     if gravity <= 0.0:
         raise ValueError("gravity must be positive")
     return sqrt(2.0 * altitude / gravity)
+
+
+def _point_matrix(values: Any, name: str) -> FloatArray:
+    array = np.asarray(values, dtype=np.float64)
+    if array.ndim == 1:
+        if array.shape != (3,):
+            raise ValueError(f"{name} must have last dimension 3")
+        array = array.reshape(1, 3)
+    elif array.ndim != 2 or array.shape[1] != 3:
+        raise ValueError(f"{name} must have shape (3,) or (N, 3)")
+    if len(array) == 0:
+        raise ValueError(f"{name} must not be empty")
+    if not np.all(np.isfinite(array)):
+        raise ValueError(f"{name} must contain only finite values")
+    return array
+
+
+def point_to_segments_distance(
+    smoke_centers: Any, missile_pos: Any, target_points: Any
+) -> tuple[FloatArray, FloatArray]:
+    """Distances from smoke centers to finite missile-to-target segments.
+
+    The result retains a two-dimensional ``(centers, targets)`` shape even
+    when either input contains only one point.
+    """
+
+    centers = _point_matrix(smoke_centers, "smoke_centers")
+    targets = _point_matrix(target_points, "target_points")
+    missile_array = np.asarray(missile_pos, dtype=np.float64)
+    if missile_array.shape == (1, 3):
+        missile_array = missile_array[0]
+    if missile_array.shape != (3,):
+        raise ValueError("missile_pos must have shape (3,)")
+    if not np.all(np.isfinite(missile_array)):
+        raise ValueError("missile_pos must contain only finite values")
+
+    segment_vectors = targets - missile_array
+    denominator = np.einsum("nj,nj->n", segment_vectors, segment_vectors)
+    if np.any(denominator <= 0.0):
+        raise ValueError("target point must not coincide with missile_pos")
+
+    center_offsets = centers[:, None, :] - missile_array
+    projection = np.einsum(
+        "bnj,nj->bn", center_offsets, segment_vectors
+    ) / denominator[None, :]
+    lambda_star = np.clip(projection, 0.0, 1.0)
+    closest_points = (
+        missile_array
+        + lambda_star[:, :, None] * segment_vectors[None, :, :]
+    )
+    differences = centers[:, None, :] - closest_points
+    distance = np.linalg.norm(differences, axis=2)
+    if not np.all(np.isfinite(distance)) or not np.all(np.isfinite(lambda_star)):
+        raise ValueError("line-of-sight geometry produced non-finite values")
+    return (
+        np.asarray(distance, dtype=np.float64),
+        np.asarray(lambda_star, dtype=np.float64),
+    )
+
+
+def line_of_sight_blocked(distance: Any, smoke_radius: Any) -> NDArray[np.bool_]:
+    """Return whether finite-segment distances intersect a smoke sphere."""
+
+    if isinstance(smoke_radius, (bool, np.bool_)) or not np.isscalar(smoke_radius):
+        raise ValueError("smoke radius must be a finite positive number")
+    try:
+        radius = float(smoke_radius)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("smoke radius must be a finite positive number") from exc
+    if not np.isfinite(radius) or radius <= 0.0:
+        raise ValueError("smoke radius must be a finite positive number")
+
+    distances = np.asarray(distance, dtype=np.float64)
+    if not np.all(np.isfinite(distances)):
+        raise ValueError("distance must contain only finite values")
+    if np.any(distances < 0.0):
+        raise ValueError("distance must be non-negative")
+    return np.asarray(distances <= radius, dtype=np.bool_)

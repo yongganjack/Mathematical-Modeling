@@ -219,6 +219,160 @@ def validate_problem_data(data: ProblemData) -> None:
         raise ValueError("gravity must be exactly 9.8")
 
 
+def sample_cylinder_surface(
+    profile: Mapping[str, Any], data: ProblemData
+) -> FloatArray:
+    """Deterministically sample the cylinder side, top, and contour edges.
+
+    The requested point budget controls approximately uniform axial and polar
+    spacings.  Boundary rings are deliberately included; duplicate edge points
+    are removed before returning a strongly read-only ``float64`` array.
+    """
+
+    if not isinstance(profile, Mapping):
+        raise TypeError("sampling profile must be a mapping")
+    target_count = profile.get("target_surface_points")
+    if (
+        isinstance(target_count, (bool, np.bool_))
+        or not isinstance(target_count, (int, np.integer))
+        or int(target_count) <= 0
+    ):
+        raise ValueError("target_surface_points must be a positive integer")
+    if not isinstance(data, ProblemData):
+        raise TypeError("data must be a ProblemData instance")
+    validate_problem_data(data)
+
+    budget = int(target_count)
+    radius = float(data.target_radius)
+    height = float(data.target_height)
+    center_x, center_y = np.asarray(data.target_center_xy, dtype=np.float64)
+
+    side_fraction = (2.0 * radius * height) / (
+        2.0 * radius * height + radius**2
+    )
+    side_budget = max(8, int(round(budget * side_fraction)))
+    circumference_to_height = 2.0 * np.pi * radius / height
+    side_azimuths = max(
+        4, int(round(np.sqrt(side_budget * circumference_to_height)))
+    )
+    height_layers = max(2, int(round(side_budget / side_azimuths)))
+
+    points: list[tuple[float, float, float]] = []
+    side_angles = np.linspace(0.0, 2.0 * np.pi, side_azimuths, endpoint=False)
+    for z in np.linspace(0.0, height, height_layers):
+        for angle in side_angles:
+            points.append(
+                (
+                    center_x + radius * np.cos(angle),
+                    center_y + radius * np.sin(angle),
+                    z,
+                )
+            )
+
+    top_budget = max(1, budget - side_budget)
+    radial_layers = max(1, int(round(np.sqrt(top_budget / np.pi))))
+    points.append((center_x, center_y, height))
+    for radial_index in range(1, radial_layers + 1):
+        radial_distance = radius * radial_index / radial_layers
+        ring_azimuths = max(4, int(round(2.0 * np.pi * radial_index)))
+        for angle in np.linspace(
+            0.0, 2.0 * np.pi, ring_azimuths, endpoint=False
+        ):
+            points.append(
+                (
+                    center_x + radial_distance * np.cos(angle),
+                    center_y + radial_distance * np.sin(angle),
+                    height,
+                )
+            )
+
+    sampled = np.asarray(points, dtype=np.float64)
+    sampled = np.unique(sampled, axis=0)
+    if sampled.ndim != 2 or sampled.shape[1] != 3 or len(sampled) == 0:
+        raise RuntimeError("cylinder surface sampling produced no points")
+    if not np.all(np.isfinite(sampled)):
+        raise RuntimeError("cylinder surface sampling produced non-finite points")
+    return _readonly_float64(sampled)
+
+
+def _validate_view_geometry(
+    missile_pos: Any, surface_points: Any, data: ProblemData
+) -> tuple[FloatArray, FloatArray]:
+    if not isinstance(data, ProblemData):
+        raise TypeError("data must be a ProblemData instance")
+    validate_problem_data(data)
+
+    missile = np.asarray(missile_pos, dtype=np.float64)
+    if missile.shape != (3,):
+        raise ValueError("missile_pos must have shape (3,)")
+    if not np.all(np.isfinite(missile)):
+        raise ValueError("missile_pos must contain only finite values")
+
+    points = np.asarray(surface_points, dtype=np.float64)
+    if points.ndim != 2 or points.shape[1:] != (3,):
+        raise ValueError("surface_points must have shape (N, 3)")
+    if len(points) == 0:
+        raise ValueError("surface_points must not be empty")
+    if not np.all(np.isfinite(points)):
+        raise ValueError("surface_points must contain only finite values")
+    return missile, points
+
+
+def visible_mask(
+    missile_pos: Any, surface_points: Any, data: ProblemData
+) -> NDArray[np.bool_]:
+    """Return the sampled cylinder points visible from ``missile_pos``.
+
+    For a convex body, a boundary point is visible exactly when at least one
+    outward supporting normal faces the viewer.  At the top/side/bottom edges
+    the union of the adjacent face tests makes tangent contour points visible.
+    """
+
+    missile, points = _validate_view_geometry(missile_pos, surface_points, data)
+    center = np.asarray(data.target_center_xy, dtype=np.float64)
+    radius = float(data.target_radius)
+    height = float(data.target_height)
+    radial = points[:, :2] - center
+    radial_squared = np.einsum("ij,ij->i", radial, radial)
+    radial_distance = np.sqrt(radial_squared)
+
+    surface_tolerance = 1e-10 * max(1.0, radius, height)
+    on_side = (
+        np.abs(radial_distance - radius) <= surface_tolerance
+    ) & (points[:, 2] >= -surface_tolerance) & (
+        points[:, 2] <= height + surface_tolerance
+    )
+    within_disk = radial_distance <= radius + surface_tolerance
+    on_top = within_disk & (np.abs(points[:, 2] - height) <= surface_tolerance)
+    on_bottom = within_disk & (np.abs(points[:, 2]) <= surface_tolerance)
+    if not np.all(on_side | on_top | on_bottom):
+        raise ValueError("surface_points must lie on the cylinder surface")
+
+    side_dot = np.einsum("ij,ij->i", radial, missile[:2] - points[:, :2])
+    viewer_distance = np.linalg.norm(missile[:2] - points[:, :2], axis=1)
+    side_scale = np.maximum(1.0, radius * viewer_distance)
+    side_visible = on_side & (side_dot >= -1e-10 * side_scale)
+    top_visible = on_top & (missile[2] - height >= -surface_tolerance)
+    bottom_visible = on_bottom & (missile[2] <= surface_tolerance)
+    mask = np.asarray(side_visible | top_visible | bottom_visible, dtype=np.bool_)
+    if not np.any(mask):
+        raise ValueError("no target surface points are visible from missile_pos")
+    return mask
+
+
+def visible_target_points(
+    missile_pos: Any, surface_points: Any, data: ProblemData
+) -> FloatArray:
+    """Return a copy of the target points visible from ``missile_pos``."""
+
+    points = np.asarray(surface_points, dtype=np.float64)
+    mask = visible_mask(missile_pos, points, data)
+    visible = np.array(points[mask], dtype=np.float64, copy=True)
+    if len(visible) == 0:
+        raise ValueError("no target surface points are visible from missile_pos")
+    return visible
+
+
 def _normalise_question_id(question_id: int | str) -> str:
     if isinstance(question_id, bool):
         raise ValueError("question_id must identify a positive question number")
