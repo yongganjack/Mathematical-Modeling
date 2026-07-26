@@ -76,13 +76,8 @@ def q3_config(config: Mapping[str, Any] | None) -> dict[str, int]:
     requested = int(cfg.get("optimization", {}).get("budgets", {}).get("q3", {}).get("max_evaluations", 4000))
     if str(cfg.get("profile", "quick")).lower() == "quick":
         return {"pso_particles": 10, "pso_iterations": 8, "de_particles": 2, "de_iterations": 4}
-    pso_particles = max(16, min(40, requested // 1000 + 16))
-    return {
-        "pso_particles": pso_particles,
-        "pso_iterations": max(12, min(60, requested // pso_particles // 8)),
-        "de_particles": max(4, min(12, requested // 8000 + 4)),
-        "de_iterations": max(8, min(40, requested // 4000 + 8)),
-    }
+    # 正常/竞赛模式: PSO=40粒子×100代, DE=8粒子×100代（8维问题）
+    return {"pso_particles": 40, "pso_iterations": 100, "de_particles": 8, "de_iterations": 100}
 
 
 def inspect_excel_template(path: str | Path, template_name: str | None = None) -> dict[str, Any]:

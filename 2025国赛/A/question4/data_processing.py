@@ -47,15 +47,8 @@ def q4_config(config: Mapping[str, Any] | None) -> dict[str, int]:
     if str(cfg.get("profile", "quick")).lower() == "quick":
         # 快速模式下：90次PSO + 72次DE评估，另加少量种子和验证评估。
         return {"pso_particles": 10, "pso_iterations": 8, "de_particles": 3, "de_iterations": 1}
-    pso_particles = max(16, min(48, requested // 300))
-    pso_iterations = max(10, min(60, requested // max(2 * pso_particles, 1) - 1))
-    remaining = max(24, requested - pso_particles * (pso_iterations + 1))
-    de_particles = max(3, min(10, remaining // 12 // 8))
-    de_iterations = max(2, min(30, remaining // max(12 * de_particles, 1) - 1))
-    return {
-        "pso_particles": pso_particles, "pso_iterations": pso_iterations,
-        "de_particles": de_particles, "de_iterations": de_iterations,
-    }
+    # 正常/竞赛模式: PSO=50粒子×100代, DE=8粒子×100代（12维问题）
+    return {"pso_particles": 50, "pso_iterations": 100, "de_particles": 8, "de_iterations": 100}
 
 
 def export_result2(
