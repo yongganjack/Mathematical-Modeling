@@ -114,11 +114,10 @@ def merge_intervals(intervals: Iterable[Sequence[float]], merge_tol: float = 0.0
     return merged
 
 
-def interval_length(interval: Sequence[float]) -> float:
-    """Return the Lebesgue length of one valid closed interval."""
+def interval_length(intervals: Iterable[Sequence[float]]) -> float:
+    """Return the summed lengths of validated closed intervals."""
 
-    left, right = _interval(interval)
-    return right - left
+    return float(sum(right - left for left, right in map(_interval, intervals)))
 
 
 def refine_boundary(
@@ -645,7 +644,7 @@ def evaluate_solution(
         )
         merged = merge_intervals(raw_intervals, merge_tolerance)
         intervals_by_missile[missile_index] = tuple(merged)
-        duration[missile_index] = sum(interval_length(interval) for interval in merged)
+        duration[missile_index] = interval_length(merged)
         ratios = np.asarray([cache[time][2] for time in sampled_times], dtype=np.float64)
         coverage_summary[missile_index] = {
             "minimum": float(np.min(ratios)),

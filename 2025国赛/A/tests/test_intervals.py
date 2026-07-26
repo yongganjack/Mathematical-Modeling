@@ -12,8 +12,7 @@ from question1.evaluation import (
 def test_merge_intervals_handles_empty_overlap_adjacency_and_zero_length():
     assert merge_intervals([]) == []
     assert merge_intervals([(0, 1), (1, 2), (3, 3), (3.000000001, 4)], merge_tol=1e-6) == [(0.0, 2.0), (3.0, 4.0)]
-    assert interval_length((2, 2)) == 0.0
-    assert interval_length((1, 4)) == 3.0
+    assert interval_length([(1, 3), (5, 5), (6, 7)]) == 3.0
     with pytest.raises(ValueError):
         merge_intervals([(-1, 2)])
     with pytest.raises(ValueError):
