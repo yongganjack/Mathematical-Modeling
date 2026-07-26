@@ -40,6 +40,28 @@ def _resolve_input(path: str | Path) -> Path:
     return (project_candidate if project_candidate.exists() else candidate).resolve()
 
 
+def _positive_float(text: str) -> float:
+    value = float(text)
+    if not np.isfinite(value) or value <= 0.0:
+        raise argparse.ArgumentTypeError("must be a finite number greater than 0")
+    return value
+
+
+def _scale_budgets(config: dict[str, Any], scale: float | None) -> None:
+    if scale is None:
+        return
+    for question in ("q2", "q3", "q4", "q5"):
+        for name, value in config["optimization"]["budgets"][question].items():
+            if isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(value, bool):
+                config["optimization"]["budgets"][question][name] = max(1, int(float(value) * scale))
+
+
+def _print_config_summary(config: Mapping[str, Any]) -> None:
+    print(f"profile: {config['profile']}")
+    print(f"master_seed: {config['master_seed']}")
+    print(f"budgets: {config['optimization']['budgets']}")
+
+
 def _plain(value: Any) -> Any:
     if is_dataclass(value): return _plain(asdict(value))
     if isinstance(value, Mapping): return {str(key): _plain(item) for key, item in value.items()}
@@ -65,14 +87,21 @@ def _write_csv(path: Path, fields: Sequence[str], rows: Sequence[Mapping[str, An
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default="configs/competition.json")
+    parser.add_argument("--config", default="configs/quick.json")
     parser.add_argument("--output-root"); parser.add_argument("--run-id"); parser.add_argument("--no-plots", action="store_true")
+    parser.add_argument("--validate-config-only", action="store_true")
+    parser.add_argument("--budget-scale", type=_positive_float)
     return parser
 
 
 def run(args: argparse.Namespace) -> tuple[int, Path]:
     wall_start = time.perf_counter(); started = _utc_now()
-    config_path = _resolve_input(args.config); config = load_config(config_path); data = load_problem_data(config); runtime = q5_config(config)
+    config_path = _resolve_input(args.config); config = load_config(config_path); data = load_problem_data(config)
+    _scale_budgets(config, getattr(args, "budget_scale", None))
+    if getattr(args, "validate_config_only", False):
+        _print_config_summary(config)
+        return 0, Path()
+    runtime = q5_config(config)
     output_root = Path(args.output_root).resolve() if args.output_root else (PROJECT_DIR / config["output"]["root"]).resolve()
     run_dir = create_run_directory(5, output_root, args.run_id); manifest_path = run_dir / "manifest.json"
     template = PROJECT_DIR / "00_赛题资料" / "附件" / "result3.xlsx"
@@ -189,7 +218,11 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
         return 1, run_dir
 
 
-def main() -> int: return run(_parser().parse_args())[0]
+def main() -> int:
+    try: return run(_parser().parse_args())[0]
+    except Exception as exc:
+        print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__": raise SystemExit(main())

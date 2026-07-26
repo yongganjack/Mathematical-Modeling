@@ -47,6 +47,28 @@ def _resolve_input(path: str | Path) -> Path:
     return candidate.resolve()
 
 
+def _positive_float(text: str) -> float:
+    value = float(text)
+    if not np.isfinite(value) or value <= 0.0:
+        raise argparse.ArgumentTypeError("must be a finite number greater than 0")
+    return value
+
+
+def _scale_budgets(config: dict[str, Any], scale: float | None) -> None:
+    if scale is None:
+        return
+    for question in ("q2", "q3", "q4", "q5"):
+        for name, value in config["optimization"]["budgets"][question].items():
+            if isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(value, bool):
+                config["optimization"]["budgets"][question][name] = max(1, int(float(value) * scale))
+
+
+def _print_config_summary(config: Mapping[str, Any]) -> None:
+    print(f"profile: {config['profile']}")
+    print(f"master_seed: {config['master_seed']}")
+    print(f"budgets: {config['optimization']['budgets']}")
+
+
 def _plain(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {str(key): _plain(item) for key, item in value.items()}
@@ -193,10 +215,12 @@ def _max_residual(result: EvaluationResult) -> float:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default="configs/competition.json")
+    parser.add_argument("--config", default="configs/quick.json")
     parser.add_argument("--output-root")
     parser.add_argument("--run-id")
     parser.add_argument("--no-plots", action="store_true")
+    parser.add_argument("--validate-config-only", action="store_true")
+    parser.add_argument("--budget-scale", type=_positive_float)
     return parser
 
 
@@ -205,6 +229,10 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
     config_path = _resolve_input(args.config)
     config = load_config(config_path)
     data = load_problem_data(config)
+    _scale_budgets(config, getattr(args, "budget_scale", None))
+    if getattr(args, "validate_config_only", False):
+        _print_config_summary(config)
+        return 0, Path()
     output_root = (
         Path(args.output_root).resolve()
         if args.output_root
@@ -340,8 +368,12 @@ def run(args: argparse.Namespace) -> tuple[int, Path]:
 
 
 def main() -> int:
-    exit_code, _ = run(_parser().parse_args())
-    return exit_code
+    try:
+        exit_code, _ = run(_parser().parse_args())
+        return exit_code
+    except Exception as exc:
+        print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

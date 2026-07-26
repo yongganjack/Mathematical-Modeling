@@ -1,3 +1,6 @@
 # IDE
 .idea/
 模板/
+outputs/
+**/__pycache__/
+.pytest_cache/
