@@ -58,5 +58,5 @@ def q2_config(config: Mapping[str, Any] | None) -> dict[str, int]:
     requested = int((config or {}).get("optimization", {}).get("budgets", {}).get("q2", {}).get("max_evaluations", 2000))
     if profile == "quick":
         return {"pso_particles": 8, "pso_iterations": 6, "de_particles": 4, "de_iterations": 2, "max_evaluations": min(requested, 2000)}
-    # 正常/竞赛模式: PSO=30粒子×100代, DE=6粒子×100代（4维问题）
-    return {"pso_particles": 30, "pso_iterations": 100, "de_particles": 6, "de_iterations": 100, "max_evaluations": requested}
+    # 正常/竞赛模式: PSO=30粒子×50代, DE=6粒子×50代（4维问题）
+    return {"pso_particles": 30, "pso_iterations": 50, "de_particles": 6, "de_iterations": 50, "max_evaluations": requested}
